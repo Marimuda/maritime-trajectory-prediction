@@ -1,13 +1,13 @@
 """Utility modules for maritime trajectory prediction"""
 
-from src.utils.metrics import (
+from .metrics import (
     haversine_distance,
     HaversineDistanceMetric,
     rmse_error,
     mae_error,
     rmse_haversine,
 )
-from src.utils.maritime_utils import (
+from .maritime_utils import (
     haversine_distance,
     bearing,
     knots_to_kmh,
@@ -18,7 +18,7 @@ from src.utils.maritime_utils import (
     discretize_value,
     create_four_hot_encoding,
 )
-from src.utils.visualization import (
+from .visualization import (
     plot_trajectory,
     plot_multiple_trajectories,
     create_interactive_map,
@@ -28,6 +28,11 @@ from src.utils.visualization import (
     visualize_attention_weights,
     plot_prediction_uncertainty,
     create_animation,
+)
+from .ais_parser import (
+    load_processed_ais_data,
+    get_vessel_trajectories,
+    prepare_trajectory_for_prediction,
 )
 
 __all__ = [
@@ -56,4 +61,8 @@ __all__ = [
     "visualize_attention_weights",
     "plot_prediction_uncertainty",
     "create_animation",
+    # ais parsing
+    "load_processed_ais_data",
+    "get_vessel_trajectories",
+    "prepare_trajectory_for_prediction",
 ]

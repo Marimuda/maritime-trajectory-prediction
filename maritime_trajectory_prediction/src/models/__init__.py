@@ -1,9 +1,10 @@
 """Model implementations for maritime trajectory prediction"""
 
-from src.models.traisformer import TrAISformer
-from src.models.ais_fuser import AISFuserLightning, MaritimeGraphNetwork
-from src.models.baselines import LSTMModel, XGBoostModel
-from src.models.factory import create_model, load_model, get_model_class
+from .traisformer import TrAISformer
+from .ais_fuser import AISFuserLightning, MaritimeGraphNetwork
+from .baselines import LSTMModel, XGBoostModel
+from .factory import create_model, load_model, get_model_class
+from .transformer_blocks import TransformerBlock, PositionalEncoding, MultiHeadAttention
 
 __all__ = [
     "TrAISformer",
@@ -14,4 +15,7 @@ __all__ = [
     "create_model",
     "load_model",
     "get_model_class",
+    "TransformerBlock",
+    "PositionalEncoding",
+    "MultiHeadAttention",
 ]
