@@ -1,0 +1,18 @@
+# Hyperparameter search for architecture optimization
+params:
+  # Shared architecture params
+  model.optimizer.lr: interval(1e-5, 1e-3)
+  model.optimizer.weight_decay: interval(0.0, 0.1)
+  
+  # Conditional model-specific params
+  +model/traisformer:
+    model.num_layers: choice(4, 6, 8)
+    model.nhead: choice(4, 8, 12)
+    model.dim_feedforward: choice(1024, 2048, 4096)
+  
+  +model/ais_fuser:
+    model.graph.polyline_dim: choice(128, 256, 384)
+    model.transformer.d_model: choice(256, 512, 768)
+    model.transformer.nhead: choice(4, 8, 12)
+    model.transformer.num_layers: choice(4, 6, 8)
+    model.ssl_beta: interval(0.1, 0.5)

@@ -1,0 +1,53 @@
+# TrAISformer model configuration
+_target_: src.models.traisformer.TrAISformerLightning
+
+name: traisformer
+
+# Model architecture
+d_model: 768
+nhead: 8
+num_layers: 6
+dim_feedforward: 2048
+dropout: 0.1
+activation: "gelu"
+
+# Four-hot encoding parameters
+fourhot_resolutions:
+  lat: 0.01  # degrees
+  lon: 0.01  # degrees
+  sog: 1.0   # knots
+  cog: 5.0   # degrees
+
+# Classification parameters
+num_classes: 9  # Number of behavior classes
+max_seq_len: 20
+pred_horizon: 10
+
+# Multi-resolution loss
+use_multi_res_loss: true
+multi_res_beta: 0.3
+
+# Optimizer
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.001
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1e-8
+
+# Learning rate scheduler  
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  T_max: 50
+  eta_min: 1e-6
+
+# Stochastic sampling for inference
+sampling:
+  temperature: 1.0
+  top_k: 5
+  vicinity_constraint: true
+  vicinity_radius: 0.05  # degrees
+
+# Gradient clipping
+gradient_clip_val: 1.0
+gradient_clip_algorithm: "norm"

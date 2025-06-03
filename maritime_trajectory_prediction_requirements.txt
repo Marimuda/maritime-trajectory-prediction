@@ -1,0 +1,61 @@
+# Core ML/DL dependencies
+torch>=2.0.0
+pytorch-lightning>=2.0.0
+torch-geometric>=2.3.0
+torchmetrics>=0.11.0
+
+# Data processing
+pandas>=1.5.0
+numpy>=1.24.0
+dask>=2023.4.0
+pyarrow>=12.0.0
+polars>=0.17.0
+
+# Geospatial and maritime
+geopy>=2.3.0
+shapely>=2.0.0
+geopandas>=0.13.0
+h3>=3.7.0
+pyproj>=3.5.0
+
+# Configuration and experiment management
+hydra-core>=1.3.0
+hydra-optuna-sweeper>=1.2.0
+omegaconf>=2.3.0
+
+# Logging and tracking
+wandb>=0.15.0
+tensorboard>=2.13.0
+
+# Scientific computing
+scipy>=1.10.0
+scikit-learn>=1.2.0
+xgboost>=1.7.0
+lightgbm>=3.3.0
+
+# Clustering and graph algorithms
+networkx>=3.1.0
+scikit-network>=0.31.0
+hdbscan>=0.8.0
+
+# Optimization
+optuna>=3.1.0
+ray[tune]>=2.4.0
+
+# Utilities
+tqdm>=4.65.0
+joblib>=1.2.0
+seaborn>=0.12.0
+matplotlib>=3.7.0
+plotly>=5.14.0
+
+# Development
+pytest>=7.3.0
+black>=23.3.0
+isort>=5.12.0
+flake8>=6.0.0
+mypy>=1.3.0
+
+# Optional: For enhanced performance
+numba>=0.57.0
+cupy-cuda11x>=12.0.0  # For CUDA 11.x

@@ -1,0 +1,65 @@
+# AISFuser model configuration
+_target_: src.models.ais_fuser.AISFuserLightning
+
+name: ais_fuser
+
+# Base transformer parameters
+d_model: 512
+nhead: 8
+num_layers: 6
+dim_feedforward: 2048
+dropout: 0.1
+activation: "gelu"
+
+# Graph network parameters
+graph:
+  polyline_dim: 256
+  cluster_eps: 0.015  # 1.5km in degrees
+  min_samples: 100
+  max_polylines: 50
+  subgraph_layers: 2
+
+# Weather fusion parameters
+weather:
+  dim: 64
+  fusion_method: "concat"  # concat, add, attention
+  
+# SSL parameters
+ssl:
+  beta: 0.3  # Weight for SSL loss
+  temperature: 0.07
+  use_weather_ssl: true
+
+# Maritime traffic network
+maritime_network:
+  waypoint_extraction:
+    dp_epsilon: 0.03
+    min_trajectory_length: 6
+  clustering:
+    eps: 1.5  # km
+    min_samples: 100
+    algorithm: "dbscan"
+  radius: 10.0  # km for local graph extraction
+
+# Classification parameters
+num_classes: 9
+max_seq_len: 20
+pred_horizon: 10
+
+# Optimizer
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.0005
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+# Learning rate scheduler
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingWarmRestarts
+  T_0: 10
+  T_mult: 2
+  eta_min: 1e-6
+
+# Training parameters
+gradient_clip_val: 1.0
+accumulate_grad_batches: 2

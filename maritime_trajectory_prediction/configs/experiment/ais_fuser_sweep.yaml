@@ -1,0 +1,23 @@
+# Configuration for AISFuser hyperparameter sweep
+defaults:
+  - base
+  - _self_
+  - override model: ais_fuser
+  - override hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    study_name: ais_fuser_optimization
+    direction: minimize
+    n_trials: 50
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${seed}
+    params:
+      model.transformer.d_model: choice(256, 512, 768)
+      model.transformer.nhead: choice(4, 8, 12)
+      model.transformer.num_layers: choice(4, 6, 8)
+      model.graph.polyline_dim: choice(128, 256, 384)
+      model.ssl_beta: interval(0.1, 0.5)
+      model.optimizer.lr: interval(1e-5, 1e-3)
+      model.optimizer.weight_decay: interval(1e-4, 1e-2)

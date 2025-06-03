@@ -1,0 +1,10 @@
+# Configuration for AIS processed data
+_target_: src.data.datamodule.AISFuserDataModule
+
+data_path: ${data_dir}/ais_processed
+batch_size: 128
+num_workers: 8
+seq_len: 20
+pred_horizon: 10
+validation_split: 0.2
+test_split: 0.1

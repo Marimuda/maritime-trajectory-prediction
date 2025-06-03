@@ -1,0 +1,40 @@
+# Main configuration file
+defaults:
+  - _self_
+  - data: ais_processed
+  - model: traisformer
+  - trainer: gpu
+  - callbacks: default
+  - logger: wandb
+  - experiment: base
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+
+# Global settings
+seed: 42
+debug: false
+print_config: true
+
+# Paths
+data_dir: ${oc.env:DATA_DIR,./data}
+output_dir: ${hydra:runtime.output_dir}
+work_dir: ${hydra:runtime.cwd}
+
+# Experiment tracking
+experiment_name: ${model.name}_${data.name}
+tags: ["${model.name}", "${data.name}"]
+
+# Optimization metric for hyperparameter search
+optim_metric: "val_f1"
+optim_mode: "max"
+
+# Runtime
+compile: false  # Enable torch.compile
+float32_matmul_precision: "medium"  # For faster training on modern GPUs
+
+hydra:
+  run:
+    dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

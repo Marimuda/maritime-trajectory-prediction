@@ -1,0 +1,21 @@
+# Configuration for TrAISformer model
+_target_: src.models.traisformer.TrAISformer
+
+# Model architecture
+d_model: 768
+nhead: 8
+num_layers: 8
+dim_feedforward: 2048
+dropout: 0.1
+
+# Feature discretization
+lat_bins: 250
+lon_bins: 270
+sog_bins: 30
+cog_bins: 72
+
+# Training parameters
+max_epochs: 100
+optimizer:
+  lr: 1e-4
+  weight_decay: 0.01
