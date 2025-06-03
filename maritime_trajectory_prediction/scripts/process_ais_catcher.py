@@ -1009,7 +1009,9 @@ def main():
             max_trajectories=args.max_trajectories
         )
         
-        plt.show()
+        # Save instead of showing
+        logger.info(f"Trajectory visualization saved to {args.output}_trajectories.png")
+        # plt.show() - don't show in interactive mode
     
     logger.info("AIS data processing completed successfully!")
 
