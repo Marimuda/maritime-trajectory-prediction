@@ -1,0 +1,18 @@
+# Generic sweep experiment configuration
+defaults:
+  - base
+  - _self_
+  - override hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    study_name: trajectory_optimization
+    direction: minimize
+    n_trials: 30
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${seed}
+    params:
+      model.learning_rate: interval(1e-5, 1e-3)
+      model.weight_decay: interval(1e-6, 1e-3)
+      model.dropout: interval(0.0, 0.5)

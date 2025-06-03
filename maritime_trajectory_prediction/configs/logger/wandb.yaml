@@ -1,0 +1,11 @@
+# Weights & Biases logger configuration
+_target_: pytorch_lightning.loggers.WandbLogger
+project: ${wandb_project}
+name: ${name}
+save_dir: ${output_dir}/logs
+offline: false
+id: null
+anonymous: null
+log_model: true
+experiment: null
+prefix: ""
