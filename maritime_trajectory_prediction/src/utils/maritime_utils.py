@@ -1,289 +1,260 @@
+"""
+Maritime utility functions for AIS data processing and analysis.
+"""
+
 import numpy as np
 import pandas as pd
-from math import radians, sin, cos, sqrt, atan2
-import matplotlib.pyplot as plt
-from datetime import timedelta
+from typing import List, Tuple, Union, Optional
+import math
+from geopy.distance import geodesic
 
-def haversine_distance(lat1, lon1, lat2, lon2):
-    """
-    Calculate the great circle distance between two points 
-    on the earth (specified in decimal degrees)
-    
-    Args:
-        lat1, lon1: Coordinates of first point
-        lat2, lon2: Coordinates of second point
-        
-    Returns:
-        Distance in kilometers
-    """
-    # Convert decimal degrees to radians
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    
-    # Haversine formula
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    r = 6371  # Radius of earth in kilometers
-    
-    return r * c
 
-def bearing(lat1, lon1, lat2, lon2):
+class MaritimeUtils:
     """
-    Calculate the bearing between two points
+    Utility class for maritime-specific calculations and operations.
+    """
     
-    Args:
-        lat1, lon1: Coordinates of first point
-        lat2, lon2: Coordinates of second point
+    @staticmethod
+    def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        Calculate the great circle distance between two points on Earth.
         
-    Returns:
-        Bearing in degrees (0-360)
-    """
-    # Convert decimal degrees to radians
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    
-    # Calculate bearing
-    dlon = lon2 - lon1
-    y = sin(dlon) * cos(lat2)
-    x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
-    bearing = np.arctan2(y, x)
-    
-    # Convert to degrees
-    bearing = np.degrees(bearing)
-    
-    # Normalize to 0-360
-    bearing = (bearing + 360) % 360
-    
-    return bearing
-
-def knots_to_kmh(knots):
-    """Convert speed in knots to kilometers per hour"""
-    return knots * 1.852
-
-def kmh_to_knots(kmh):
-    """Convert speed in kilometers per hour to knots"""
-    return kmh / 1.852
-
-def calculate_trajectory_features(trajectory):
-    """
-    Calculate trajectory features like speed, course, etc.
-    
-    Args:
-        trajectory: DataFrame with lat, lon, timestamp columns
-        
-    Returns:
-        DataFrame with additional features
-    """
-    # Copy to avoid modifying original
-    traj = trajectory.copy()
-    
-    # Sort by timestamp
-    traj = traj.sort_values('timestamp')
-    
-    # Calculate time differences in seconds
-    traj['dt'] = traj['timestamp'].diff().dt.total_seconds()
-    
-    # Calculate spatial differences
-    traj['dlat'] = traj['lat'].diff()
-    traj['dlon'] = traj['lon'].diff()
-    
-    # Calculate distance in kilometers
-    distances = []
-    for i in range(len(traj)):
-        if i == 0:
-            distances.append(0)
-        else:
-            lat1, lon1 = traj.iloc[i-1]['lat'], traj.iloc[i-1]['lon']
-            lat2, lon2 = traj.iloc[i]['lat'], traj.iloc[i]['lon']
-            distances.append(haversine_distance(lat1, lon1, lat2, lon2))
-    
-    traj['distance_km'] = distances
-    
-    # Calculate speed in km/h
-    traj['speed_kmh'] = traj['distance_km'] / (traj['dt'] / 3600)
-    
-    # Calculate speed in knots
-    traj['speed_knots'] = kmh_to_knots(traj['speed_kmh'])
-    
-    # Calculate bearing
-    bearings = []
-    for i in range(len(traj)):
-        if i == 0:
-            bearings.append(0)
-        else:
-            lat1, lon1 = traj.iloc[i-1]['lat'], traj.iloc[i-1]['lon']
-            lat2, lon2 = traj.iloc[i]['lat'], traj.iloc[i]['lon']
-            bearings.append(bearing(lat1, lon1, lat2, lon2))
-    
-    traj['bearing'] = bearings
-    
-    # Calculate bearing changes
-    traj['dbearing'] = traj['bearing'].diff()
-    
-    # Normalize bearing changes to -180 to 180
-    traj['dbearing'] = (traj['dbearing'] + 180) % 360 - 180
-    
-    return traj
-
-def interpolate_trajectory(trajectory, interval_minutes=10):
-    """
-    Interpolate a trajectory to a fixed time interval
-    
-    Args:
-        trajectory: DataFrame with lat, lon, timestamp columns
-        interval_minutes: Time interval for interpolation
-        
-    Returns:
-        DataFrame with interpolated trajectory
-    """
-    # Copy to avoid modifying original
-    traj = trajectory.copy()
-    
-    # Sort by timestamp
-    traj = traj.sort_values('timestamp')
-    
-    # Create new time range
-    start_time = traj['timestamp'].min()
-    end_time = traj['timestamp'].max()
-    
-    # Create new index with fixed interval
-    new_index = pd.date_range(
-        start=start_time,
-        end=end_time,
-        freq=f'{interval_minutes}min'
-    )
-    
-    # Create new DataFrame with interpolated values
-    new_traj = pd.DataFrame(index=new_index)
-    new_traj.index.name = 'timestamp'
-    new_traj = new_traj.reset_index()
-    
-    # Interpolate lat and lon
-    traj_indexed = traj.set_index('timestamp')
-    new_traj['lat'] = np.interp(
-        new_traj['timestamp'].astype(int) / 10**9,
-        traj_indexed.index.astype(int) / 10**9,
-        traj_indexed['lat']
-    )
-    new_traj['lon'] = np.interp(
-        new_traj['timestamp'].astype(int) / 10**9,
-        traj_indexed.index.astype(int) / 10**9,
-        traj_indexed['lon']
-    )
-    
-    # Recalculate features
-    new_traj = calculate_trajectory_features(new_traj)
-    
-    return new_traj
-
-def create_trajectory_segments(ais_df, max_gap_minutes=30, min_points=6):
-    """
-    Create trajectory segments from AIS data
-    
-    Args:
-        ais_df: DataFrame with MMSI, lat, lon, timestamp columns
-        max_gap_minutes: Maximum time gap between points to consider same trajectory
-        min_points: Minimum number of points for a valid trajectory
-        
-    Returns:
-        List of DataFrames, each representing a trajectory segment
-    """
-    # Group by vessel ID
-    grouped = ais_df.groupby('mmsi')
-    
-    trajectories = []
-    
-    for mmsi, group in grouped:
-        # Sort by timestamp
-        group = group.sort_values('timestamp')
-        
-        # Calculate time gaps
-        time_gaps = group['timestamp'].diff()
-        
-        # Find gaps larger than threshold
-        gap_indices = np.where(time_gaps > timedelta(minutes=max_gap_minutes))[0]
-        
-        if len(gap_indices) == 0:
-            # Single trajectory
-            if len(group) >= min_points:
-                trajectories.append(group)
-        else:
-            # Multiple segments
-            start_idx = 0
+        Args:
+            lat1, lon1: Latitude and longitude of first point in decimal degrees
+            lat2, lon2: Latitude and longitude of second point in decimal degrees
             
-            for gap_idx in gap_indices:
-                segment = group.iloc[start_idx:gap_idx]
-                if len(segment) >= min_points:
-                    trajectories.append(segment)
-                start_idx = gap_idx
+        Returns:
+            Distance in kilometers
+        """
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        
+        # Radius of Earth in kilometers
+        r = 6371
+        
+        return c * r
+    
+    @staticmethod
+    def calculate_distances(lats: np.ndarray, lons: np.ndarray) -> np.ndarray:
+        """
+        Calculate distances between consecutive points in a trajectory.
+        
+        Args:
+            lats: Array of latitudes
+            lons: Array of longitudes
             
-            # Last segment
-            segment = group.iloc[start_idx:]
-            if len(segment) >= min_points:
-                trajectories.append(segment)
-    
-    return trajectories
-
-def discretize_value(value, min_val, max_val, num_bins):
-    """
-    Discretize a continuous value into a bin index
-    
-    Args:
-        value: Value to discretize
-        min_val: Minimum value of range
-        max_val: Maximum value of range
-        num_bins: Number of bins for discretization
+        Returns:
+            Array of distances in kilometers (first element is 0)
+        """
+        distances = np.zeros(len(lats))
         
-    Returns:
-        Bin index (0 to num_bins-1)
-    """
-    if value <= min_val:
-        return 0
-    if value >= max_val:
-        return num_bins - 1
-    
-    bin_size = (max_val - min_val) / num_bins
-    bin_idx = int((value - min_val) / bin_size)
-    
-    return min(bin_idx, num_bins - 1)
-
-def create_four_hot_encoding(lat, lon, sog, cog, config):
-    """
-    Create four-hot encoding for a single AIS point
-    
-    Args:
-        lat: Latitude value
-        lon: Longitude value
-        sog: Speed over ground (knots)
-        cog: Course over ground (degrees)
-        config: Configuration with bin specifications
+        for i in range(1, len(lats)):
+            distances[i] = MaritimeUtils.haversine_distance(
+                lats[i-1], lons[i-1], lats[i], lons[i]
+            )
         
-    Returns:
-        Dictionary of one-hot vectors for each attribute
-    """
-    # Get bin indices
-    lat_idx = discretize_value(lat, config.lat_min, config.lat_max, config.lat_bins)
-    lon_idx = discretize_value(lon, config.lon_min, config.lon_max, config.lon_bins)
-    sog_idx = discretize_value(sog, config.sog_min, config.sog_max, config.sog_bins)
-    cog_idx = discretize_value(cog, 0, 360, config.cog_bins)
+        return distances
     
-    # Create one-hot vectors
-    lat_one_hot = np.zeros(config.lat_bins)
-    lat_one_hot[lat_idx] = 1
+    @staticmethod
+    def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        Calculate the bearing between two points.
+        
+        Args:
+            lat1, lon1: Latitude and longitude of first point in decimal degrees
+            lat2, lon2: Latitude and longitude of second point in decimal degrees
+            
+        Returns:
+            Bearing in degrees (0-360)
+        """
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        
+        dlon = lon2 - lon1
+        
+        y = math.sin(dlon) * math.cos(lat2)
+        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+        
+        bearing = math.atan2(y, x)
+        
+        # Convert to degrees and normalize to 0-360
+        bearing = math.degrees(bearing)
+        bearing = (bearing + 360) % 360
+        
+        return bearing
     
-    lon_one_hot = np.zeros(config.lon_bins)
-    lon_one_hot[lon_idx] = 1
+    @staticmethod
+    def calculate_speed(distance_km: float, time_hours: float) -> float:
+        """
+        Calculate speed from distance and time.
+        
+        Args:
+            distance_km: Distance in kilometers
+            time_hours: Time in hours
+            
+        Returns:
+            Speed in knots
+        """
+        if time_hours <= 0:
+            return 0.0
+        
+        speed_kmh = distance_km / time_hours
+        speed_knots = speed_kmh * 0.539957  # Convert km/h to knots
+        
+        return speed_knots
     
-    sog_one_hot = np.zeros(config.sog_bins)
-    sog_one_hot[sog_idx] = 1
+    @staticmethod
+    def normalize_course(course: float) -> float:
+        """
+        Normalize course to 0-360 degrees.
+        
+        Args:
+            course: Course in degrees
+            
+        Returns:
+            Normalized course (0-360 degrees)
+        """
+        return course % 360
     
-    cog_one_hot = np.zeros(config.cog_bins)
-    cog_one_hot[cog_idx] = 1
+    @staticmethod
+    def course_difference(course1: float, course2: float) -> float:
+        """
+        Calculate the difference between two courses, accounting for wraparound.
+        
+        Args:
+            course1: First course in degrees
+            course2: Second course in degrees
+            
+        Returns:
+            Course difference in degrees (-180 to 180)
+        """
+        diff = course2 - course1
+        
+        # Handle wraparound
+        if diff > 180:
+            diff -= 360
+        elif diff < -180:
+            diff += 360
+            
+        return diff
     
-    return {
-        'lat': lat_one_hot,
-        'lon': lon_one_hot,
-        'sog': sog_one_hot,
-        'cog': cog_one_hot,
-        'indices': (lat_idx, lon_idx, sog_idx, cog_idx)
-    }
+    @staticmethod
+    def is_valid_position(lat: float, lon: float) -> bool:
+        """
+        Check if a position is valid.
+        
+        Args:
+            lat: Latitude in decimal degrees
+            lon: Longitude in decimal degrees
+            
+        Returns:
+            True if position is valid
+        """
+        return (-90 <= lat <= 90) and (-180 <= lon <= 180)
+    
+    @staticmethod
+    def is_valid_speed(speed_knots: float, max_speed: float = 50.0) -> bool:
+        """
+        Check if a speed is valid for a maritime vessel.
+        
+        Args:
+            speed_knots: Speed in knots
+            max_speed: Maximum valid speed in knots
+            
+        Returns:
+            True if speed is valid
+        """
+        return 0 <= speed_knots <= max_speed
+    
+    @staticmethod
+    def is_valid_course(course: float) -> bool:
+        """
+        Check if a course is valid.
+        
+        Args:
+            course: Course in degrees
+            
+        Returns:
+            True if course is valid
+        """
+        return 0 <= course <= 360
+    
+    @staticmethod
+    def interpolate_position(lat1: float, lon1: float, lat2: float, lon2: float, 
+                           fraction: float) -> Tuple[float, float]:
+        """
+        Interpolate position between two points.
+        
+        Args:
+            lat1, lon1: First position
+            lat2, lon2: Second position
+            fraction: Interpolation fraction (0-1)
+            
+        Returns:
+            Interpolated latitude and longitude
+        """
+        # Simple linear interpolation (for short distances)
+        lat = lat1 + fraction * (lat2 - lat1)
+        lon = lon1 + fraction * (lon2 - lon1)
+        
+        return lat, lon
+    
+    @staticmethod
+    def calculate_trajectory_features(trajectory: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate comprehensive features for a trajectory.
+        
+        Args:
+            trajectory: DataFrame with lat, lon, timestamp columns
+            
+        Returns:
+            DataFrame with additional feature columns
+        """
+        traj = trajectory.copy()
+        
+        # Calculate distances
+        distances = MaritimeUtils.calculate_distances(
+            traj['lat'].values, traj['lon'].values
+        )
+        traj['distance_km'] = distances
+        
+        # Calculate bearings
+        bearings = np.zeros(len(traj))
+        for i in range(1, len(traj)):
+            bearings[i] = MaritimeUtils.calculate_bearing(
+                traj.iloc[i-1]['lat'], traj.iloc[i-1]['lon'],
+                traj.iloc[i]['lat'], traj.iloc[i]['lon']
+            )
+        traj['bearing'] = bearings
+        
+        # Calculate speeds if timestamp is available
+        if 'timestamp' in traj.columns:
+            time_diffs = traj['timestamp'].diff().dt.total_seconds() / 3600  # hours
+            speeds = np.zeros(len(traj))
+            
+            for i in range(1, len(traj)):
+                if time_diffs.iloc[i] > 0:
+                    speeds[i] = MaritimeUtils.calculate_speed(
+                        distances[i], time_diffs.iloc[i]
+                    )
+            
+            traj['calculated_speed_knots'] = speeds
+            traj['time_diff_hours'] = time_diffs
+        
+        # Calculate course changes
+        if len(traj) > 2:
+            course_changes = np.zeros(len(traj))
+            for i in range(2, len(traj)):
+                course_changes[i] = MaritimeUtils.course_difference(
+                    bearings[i-1], bearings[i]
+                )
+            traj['course_change'] = course_changes
+        
+        return traj
+

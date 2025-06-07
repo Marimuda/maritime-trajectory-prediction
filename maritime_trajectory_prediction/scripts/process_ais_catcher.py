@@ -1009,9 +1009,15 @@ def main():
             max_trajectories=args.max_trajectories
         )
         
-        # Save instead of showing
+        # Save and show
         logger.info(f"Trajectory visualization saved to {args.output}_trajectories.png")
-        # plt.show() - don't show in interactive mode
+        
+        # Try to display if running in X environment
+        try:
+            logger.info("Displaying trajectory visualization...")
+            plt.show()
+        except Exception as e:
+            logger.warning(f"Could not display visualization: {e}")
     
     logger.info("AIS data processing completed successfully!")
 

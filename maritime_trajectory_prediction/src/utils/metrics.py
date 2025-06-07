@@ -1,127 +1,244 @@
-import torch
+"""
+Metrics for evaluating trajectory prediction models.
+"""
+
 import numpy as np
-import torchmetrics
-from math import radians, sin, cos, sqrt, atan2
+import pandas as pd
+from typing import List, Dict, Tuple, Union
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import math
 
-def haversine_distance(lat1, lon1, lat2, lon2):
-    """
-    Calculate the great circle distance between two points 
-    on the earth (specified in decimal degrees)
-    
-    Args:
-        lat1, lon1: Coordinates of first point
-        lat2, lon2: Coordinates of second point
-        
-    Returns:
-        Distance in kilometers
-    """
-    # Convert decimal degrees to radians
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    
-    # Haversine formula
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    r = 6371  # Radius of earth in kilometers
-    
-    return r * c
 
-class HaversineDistanceMetric(torchmetrics.Metric):
-    """Torchmetrics implementation of Haversine distance"""
-    def __init__(self, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
-        
-        self.add_state("distances", default=[], dist_reduce_fx="cat")
-        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
-        
-    def update(self, preds, target):
+class TrajectoryMetrics:
+    """
+    Metrics for evaluating trajectory prediction performance.
+    """
+    
+    @staticmethod
+    def rmse_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
         """
-        Update state with predictions and targets
+        Calculate Root Mean Square Error.
         
         Args:
-            preds: Predicted coordinates (batch_size, 2) with [lat, lon]
-            target: Target coordinates (batch_size, 2) with [lat, lon]
-        """
-        # Convert to numpy for calculation
-        preds_np = preds.detach().cpu().numpy()
-        target_np = target.detach().cpu().numpy()
-        
-        # Calculate distances
-        batch_size = preds.shape[0]
-        distances = []
-        
-        for i in range(batch_size):
-            lat1, lon1 = preds_np[i]
-            lat2, lon2 = target_np[i]
+            y_true: True values
+            y_pred: Predicted values
             
-            dist = haversine_distance(lat1, lon1, lat2, lon2)
-            distances.append(dist)
+        Returns:
+            RMSE value
+        """
+        return math.sqrt(mean_squared_error(y_true, y_pred))
+    
+    @staticmethod
+    def mae_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """
+        Calculate Mean Absolute Error.
         
-        # Update state
-        self.distances.extend(distances)
-        self.total += batch_size
+        Args:
+            y_true: True values
+            y_pred: Predicted values
+            
+        Returns:
+            MAE value
+        """
+        return mean_absolute_error(y_true, y_pred)
     
-    def compute(self):
-        """Compute average distance"""
-        return torch.tensor(np.mean(self.distances))
-
-def rmse_error(pred, target):
-    """
-    Root Mean Squared Error between predicted and target trajectories
-    
-    Args:
-        pred: Predicted trajectory (batch_size, seq_len, 2)
-        target: Target trajectory (batch_size, seq_len, 2)
+    @staticmethod
+    def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        Calculate the great circle distance between two points.
         
-    Returns:
-        RMSE error
-    """
-    return torch.sqrt(torch.mean((pred - target)**2))
-
-def mae_error(pred, target):
-    """
-    Mean Absolute Error between predicted and target trajectories
-    
-    Args:
-        pred: Predicted trajectory (batch_size, seq_len, 2)
-        target: Target trajectory (batch_size, seq_len, 2)
+        Args:
+            lat1, lon1: Latitude and longitude of first point
+            lat2, lon2: Latitude and longitude of second point
+            
+        Returns:
+            Distance in kilometers
+        """
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
         
-    Returns:
-        MAE error
-    """
-    return torch.mean(torch.abs(pred - target))
-
-def rmse_haversine(pred_lats, pred_lons, target_lats, target_lons):
-    """
-    Root Mean Squared Haversine Error
-    
-    Args:
-        pred_lats: Predicted latitudes (batch_size, seq_len)
-        pred_lons: Predicted longitudes (batch_size, seq_len)
-        target_lats: Target latitudes (batch_size, seq_len)
-        target_lons: Target longitudes (batch_size, seq_len)
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
         
-    Returns:
-        RMSE Haversine error in kilometers
-    """
-    batch_size = pred_lats.shape[0]
-    seq_len = pred_lats.shape[1]
+        # Radius of Earth in kilometers
+        r = 6371
+        
+        return c * r
     
-    # Calculate Haversine distances for each point
-    distances = []
-    for b in range(batch_size):
-        seq_distances = []
-        for s in range(seq_len):
-            dist = haversine_distance(
-                pred_lats[b, s].item(), pred_lons[b, s].item(),
-                target_lats[b, s].item(), target_lons[b, s].item()
+    @staticmethod
+    def distance_error(true_positions: np.ndarray, pred_positions: np.ndarray) -> np.ndarray:
+        """
+        Calculate distance errors between true and predicted positions.
+        
+        Args:
+            true_positions: Array of shape (n_samples, 2) with [lat, lon]
+            pred_positions: Array of shape (n_samples, 2) with [lat, lon]
+            
+        Returns:
+            Array of distance errors in kilometers
+        """
+        errors = []
+        
+        for i in range(len(true_positions)):
+            true_lat, true_lon = true_positions[i]
+            pred_lat, pred_lon = pred_positions[i]
+            
+            error = TrajectoryMetrics.haversine_distance(
+                true_lat, true_lon, pred_lat, pred_lon
             )
-            seq_distances.append(dist)
-        distances.append(seq_distances)
+            errors.append(error)
+        
+        return np.array(errors)
     
-    # Convert to tensor
-    distances = torch.tensor(distances)
+    @staticmethod
+    def average_displacement_error(true_positions: np.ndarray, pred_positions: np.ndarray) -> float:
+        """
+        Calculate Average Displacement Error (ADE).
+        
+        Args:
+            true_positions: Array of shape (n_samples, 2) with [lat, lon]
+            pred_positions: Array of shape (n_samples, 2) with [lat, lon]
+            
+        Returns:
+            ADE in kilometers
+        """
+        distance_errors = TrajectoryMetrics.distance_error(true_positions, pred_positions)
+        return np.mean(distance_errors)
     
-    # Calculate RMSE
-    return torch.sqrt(torch.mean(distances**2))
+    @staticmethod
+    def final_displacement_error(true_positions: np.ndarray, pred_positions: np.ndarray) -> float:
+        """
+        Calculate Final Displacement Error (FDE).
+        
+        Args:
+            true_positions: Array of shape (n_samples, 2) with [lat, lon]
+            pred_positions: Array of shape (n_samples, 2) with [lat, lon]
+            
+        Returns:
+            FDE in kilometers
+        """
+        if len(true_positions) == 0:
+            return 0.0
+        
+        true_final = true_positions[-1]
+        pred_final = pred_positions[-1]
+        
+        return TrajectoryMetrics.haversine_distance(
+            true_final[0], true_final[1], pred_final[0], pred_final[1]
+        )
+    
+    @staticmethod
+    def trajectory_metrics(true_trajectories: List[np.ndarray], 
+                         pred_trajectories: List[np.ndarray]) -> Dict[str, float]:
+        """
+        Calculate comprehensive trajectory prediction metrics.
+        
+        Args:
+            true_trajectories: List of true trajectory arrays
+            pred_trajectories: List of predicted trajectory arrays
+            
+        Returns:
+            Dictionary with metric values
+        """
+        if len(true_trajectories) != len(pred_trajectories):
+            raise ValueError("Number of true and predicted trajectories must match")
+        
+        ade_values = []
+        fde_values = []
+        lat_rmse_values = []
+        lon_rmse_values = []
+        lat_mae_values = []
+        lon_mae_values = []
+        
+        for true_traj, pred_traj in zip(true_trajectories, pred_trajectories):
+            if len(true_traj) != len(pred_traj):
+                # Truncate to minimum length
+                min_len = min(len(true_traj), len(pred_traj))
+                true_traj = true_traj[:min_len]
+                pred_traj = pred_traj[:min_len]
+            
+            if len(true_traj) == 0:
+                continue
+            
+            # Calculate ADE and FDE
+            ade = TrajectoryMetrics.average_displacement_error(true_traj, pred_traj)
+            fde = TrajectoryMetrics.final_displacement_error(true_traj, pred_traj)
+            
+            ade_values.append(ade)
+            fde_values.append(fde)
+            
+            # Calculate coordinate-wise errors
+            true_lats = true_traj[:, 0]
+            true_lons = true_traj[:, 1]
+            pred_lats = pred_traj[:, 0]
+            pred_lons = pred_traj[:, 1]
+            
+            lat_rmse = TrajectoryMetrics.rmse_error(true_lats, pred_lats)
+            lon_rmse = TrajectoryMetrics.rmse_error(true_lons, pred_lons)
+            lat_mae = TrajectoryMetrics.mae_error(true_lats, pred_lats)
+            lon_mae = TrajectoryMetrics.mae_error(true_lons, pred_lons)
+            
+            lat_rmse_values.append(lat_rmse)
+            lon_rmse_values.append(lon_rmse)
+            lat_mae_values.append(lat_mae)
+            lon_mae_values.append(lon_mae)
+        
+        return {
+            'ADE_km': np.mean(ade_values) if ade_values else 0.0,
+            'FDE_km': np.mean(fde_values) if fde_values else 0.0,
+            'Latitude_RMSE': np.mean(lat_rmse_values) if lat_rmse_values else 0.0,
+            'Longitude_RMSE': np.mean(lon_rmse_values) if lon_rmse_values else 0.0,
+            'Latitude_MAE': np.mean(lat_mae_values) if lat_mae_values else 0.0,
+            'Longitude_MAE': np.mean(lon_mae_values) if lon_mae_values else 0.0,
+            'num_trajectories': len(true_trajectories)
+        }
+    
+    @staticmethod
+    def speed_accuracy(true_speeds: np.ndarray, pred_speeds: np.ndarray) -> Dict[str, float]:
+        """
+        Calculate speed prediction accuracy metrics.
+        
+        Args:
+            true_speeds: True speed values in knots
+            pred_speeds: Predicted speed values in knots
+            
+        Returns:
+            Dictionary with speed metrics
+        """
+        return {
+            'Speed_RMSE_knots': TrajectoryMetrics.rmse_error(true_speeds, pred_speeds),
+            'Speed_MAE_knots': TrajectoryMetrics.mae_error(true_speeds, pred_speeds),
+            'Speed_MAPE_%': np.mean(np.abs((true_speeds - pred_speeds) / (true_speeds + 1e-8))) * 100
+        }
+    
+    @staticmethod
+    def course_accuracy(true_courses: np.ndarray, pred_courses: np.ndarray) -> Dict[str, float]:
+        """
+        Calculate course prediction accuracy metrics.
+        
+        Args:
+            true_courses: True course values in degrees
+            pred_courses: Predicted course values in degrees
+            
+        Returns:
+            Dictionary with course metrics
+        """
+        # Handle circular nature of course (0° = 360°)
+        course_errors = []
+        
+        for true_course, pred_course in zip(true_courses, pred_courses):
+            error = abs(true_course - pred_course)
+            # Take the smaller angle
+            error = min(error, 360 - error)
+            course_errors.append(error)
+        
+        course_errors = np.array(course_errors)
+        
+        return {
+            'Course_MAE_degrees': np.mean(course_errors),
+            'Course_RMSE_degrees': np.sqrt(np.mean(course_errors**2))
+        }
+

@@ -1,407 +1,313 @@
+"""
+Visualization utilities for maritime trajectory data.
+"""
+
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import folium
-from folium.plugins import HeatMap, MarkerCluster
 import seaborn as sns
-from matplotlib.colors import LinearSegmentedColormap
-import networkx as nx
-import torch
+import pandas as pd
+import numpy as np
+from typing import List, Dict, Optional, Tuple, Union
+import folium
+from folium import plugins
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 
-def plot_trajectory(trajectory, title=None, figsize=(10, 6)):
-    """
-    Plot a single vessel trajectory
-    
-    Args:
-        trajectory: DataFrame with lat, lon columns
-        title: Optional title for the plot
-        figsize: Figure size
-    """
-    plt.figure(figsize=figsize)
-    plt.plot(trajectory['lon'], trajectory['lat'], 'b-', linewidth=2)
-    plt.plot(trajectory['lon'].iloc[0], trajectory['lat'].iloc[0], 'go', markersize=10, label='Start')
-    plt.plot(trajectory['lon'].iloc[-1], trajectory['lat'].iloc[-1], 'ro', markersize=10, label='End')
-    
-    plt.xlabel('Longitude')
-    plt.ylabel('Latitude')
-    if title:
-        plt.title(title)
-    else:
-        plt.title('Vessel Trajectory')
-    
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    
-    return plt.gca()
 
-def plot_multiple_trajectories(trajectories, title=None, figsize=(12, 8), cmap=None):
+class TrajectoryVisualizer:
     """
-    Plot multiple vessel trajectories
-    
-    Args:
-        trajectories: List of DataFrames with lat, lon columns
-        title: Optional title for the plot
-        figsize: Figure size
-        cmap: Optional colormap for trajectories
+    Visualization utilities for maritime trajectory data and predictions.
     """
-    plt.figure(figsize=figsize)
     
-    if cmap is None:
-        cmap = plt.cm.jet
-    
-    colors = cmap(np.linspace(0, 1, len(trajectories)))
-    
-    for i, traj in enumerate(trajectories):
-        plt.plot(traj['lon'], traj['lat'], '-', color=colors[i], linewidth=1, alpha=0.7)
-        plt.plot(traj['lon'].iloc[0], traj['lat'].iloc[0], 'o', color=colors[i], markersize=5)
-    
-    plt.xlabel('Longitude')
-    plt.ylabel('Latitude')
-    if title:
-        plt.title(title)
-    else:
-        plt.title(f'Multiple Vessel Trajectories (n={len(trajectories)})')
-    
-    plt.grid(True)
-    plt.tight_layout()
-    
-    return plt.gca()
-
-def create_interactive_map(trajectories, zoom_start=10, tiles='OpenStreetMap'):
-    """
-    Create an interactive map with vessel trajectories
-    
-    Args:
-        trajectories: List of DataFrames with lat, lon columns
-        zoom_start: Initial zoom level
-        tiles: Map tile type
+    def __init__(self, style: str = 'seaborn-v0_8'):
+        """
+        Initialize visualizer.
         
-    Returns:
-        Folium map object
-    """
-    # Calculate center point
-    all_lats = []
-    all_lons = []
+        Args:
+            style: Matplotlib style to use
+        """
+        plt.style.use(style)
+        self.colors = plt.cm.Set1(np.linspace(0, 1, 10))
     
-    for traj in trajectories:
-        all_lats.extend(traj['lat'].tolist())
-        all_lons.extend(traj['lon'].tolist())
-    
-    center_lat = np.mean(all_lats)
-    center_lon = np.mean(all_lons)
-    
-    # Create map
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_start, tiles=tiles)
-    
-    # Add trajectories
-    colors = plt.cm.jet(np.linspace(0, 1, len(trajectories)))
-    colors = [(int(r*255), int(g*255), int(b*255)) for r, g, b, _ in colors]
-    
-    for i, traj in enumerate(trajectories):
-        points = list(zip(traj['lat'].tolist(), traj['lon'].tolist()))
-        folium.PolyLine(
-            points,
-            color=f'#{colors[i][0]:02x}{colors[i][1]:02x}{colors[i][2]:02x}',
-            weight=3,
-            opacity=0.7
-        ).add_to(m)
+    def plot_trajectory(self, 
+                       trajectory: pd.DataFrame,
+                       title: str = "Vessel Trajectory",
+                       save_path: Optional[str] = None,
+                       figsize: Tuple[int, int] = (12, 8)) -> plt.Figure:
+        """
+        Plot a single vessel trajectory.
         
-        # Add start/end markers
-        folium.Marker(
-            [traj['lat'].iloc[0], traj['lon'].iloc[0]],
-            icon=folium.Icon(color='green', icon='play', prefix='fa')
-        ).add_to(m)
+        Args:
+            trajectory: DataFrame with lat, lon columns
+            title: Plot title
+            save_path: Optional path to save the plot
+            figsize: Figure size
+            
+        Returns:
+            Matplotlib figure
+        """
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
         
-        folium.Marker(
-            [traj['lat'].iloc[-1], traj['lon'].iloc[-1]],
-            icon=folium.Icon(color='red', icon='stop', prefix='fa')
-        ).add_to(m)
-    
-    return m
-
-def plot_density_map(trajectories, bins=100, figsize=(12, 10), cmap='viridis'):
-    """
-    Create a 2D histogram showing vessel density
-    
-    Args:
-        trajectories: List of DataFrames with lat, lon columns
-        bins: Number of bins for histogram
-        figsize: Figure size
-        cmap: Colormap for density visualization
+        # Plot trajectory on map
+        ax1.plot(trajectory['lon'], trajectory['lat'], 'b-', alpha=0.7, linewidth=2)
+        ax1.scatter(trajectory['lon'].iloc[0], trajectory['lat'].iloc[0], 
+                   c='green', s=100, marker='o', label='Start', zorder=5)
+        ax1.scatter(trajectory['lon'].iloc[-1], trajectory['lat'].iloc[-1], 
+                   c='red', s=100, marker='s', label='End', zorder=5)
         
-    Returns:
-        Figure and axes objects
-    """
-    # Extract all coordinates
-    all_lats = []
-    all_lons = []
-    
-    for traj in trajectories:
-        all_lats.extend(traj['lat'].tolist())
-        all_lons.extend(traj['lon'].tolist())
-    
-    # Create histogram
-    fig, ax = plt.subplots(figsize=figsize)
-    h, xedges, yedges, im = ax.hist2d(all_lons, all_lats, bins=bins, cmap=cmap)
-    
-    plt.colorbar(im, ax=ax, label='Count')
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    ax.set_title('Vessel Density Map')
-    ax.grid(True)
-    
-    return fig, ax
-
-def plot_prediction_vs_ground_truth(input_traj, pred_traj, gt_traj, figsize=(12, 8)):
-    """
-    Plot predicted trajectory vs ground truth
-    
-    Args:
-        input_traj: Input trajectory data points
-        pred_traj: Predicted trajectory points
-        gt_traj: Ground truth trajectory points
-        figsize: Figure size
+        ax1.set_xlabel('Longitude')
+        ax1.set_ylabel('Latitude')
+        ax1.set_title(f'{title} - Geographic View')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
         
-    Returns:
-        Figure and axes objects
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Plot input trajectory
-    ax.plot(
-        input_traj[:, 1], input_traj[:, 0],
-        'b-', linewidth=2, label='Input Trajectory'
-    )
-    
-    # Plot ground truth
-    ax.plot(
-        gt_traj[:, 1], gt_traj[:, 0],
-        'g-', linewidth=2, label='Ground Truth'
-    )
-    
-    # Plot prediction
-    ax.plot(
-        pred_traj[:, 1], pred_traj[:, 0],
-        'r-', linewidth=2, label='Prediction'
-    )
-    
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    ax.set_title('Trajectory Prediction')
-    ax.grid(True)
-    ax.legend()
-    
-    return fig, ax
-
-def plot_maritime_graph(graph, positions=None, figsize=(12, 10), node_size=50, edge_width=1.0):
-    """
-    Visualize a maritime graph
-    
-    Args:
-        graph: NetworkX graph object
-        positions: Optional node positions
-        figsize: Figure size
-        node_size: Size of nodes
-        edge_width: Width of edges
-        
-    Returns:
-        Figure and axes objects
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Get positions if not provided
-    if positions is None:
-        if nx.get_node_attributes(graph, 'pos'):
-            positions = nx.get_node_attributes(graph, 'pos')
+        # Plot speed over time if available
+        if 'timestamp' in trajectory.columns and 'sog' in trajectory.columns:
+            ax2.plot(trajectory['timestamp'], trajectory['sog'], 'r-', linewidth=2)
+            ax2.set_xlabel('Time')
+            ax2.set_ylabel('Speed (knots)')
+            ax2.set_title(f'{title} - Speed Profile')
+            ax2.grid(True, alpha=0.3)
+            plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
         else:
-            positions = nx.spring_layout(graph)
+            # Plot distance vs point index
+            if 'distance_km' in trajectory.columns:
+                ax2.plot(range(len(trajectory)), trajectory['distance_km'], 'g-', linewidth=2)
+                ax2.set_xlabel('Point Index')
+                ax2.set_ylabel('Distance from Previous Point (km)')
+                ax2.set_title(f'{title} - Distance Profile')
+                ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        return fig
     
-    # Draw nodes
-    nx.draw_networkx_nodes(
-        graph, positions,
-        node_size=node_size,
-        node_color='blue',
-        alpha=0.7,
-        ax=ax
-    )
+    def plot_multiple_trajectories(self,
+                                 trajectories: List[pd.DataFrame],
+                                 labels: Optional[List[str]] = None,
+                                 title: str = "Multiple Trajectories",
+                                 save_path: Optional[str] = None,
+                                 figsize: Tuple[int, int] = (12, 8)) -> plt.Figure:
+        """
+        Plot multiple trajectories on the same map.
+        
+        Args:
+            trajectories: List of trajectory DataFrames
+            labels: Optional labels for each trajectory
+            title: Plot title
+            save_path: Optional path to save the plot
+            figsize: Figure size
+            
+        Returns:
+            Matplotlib figure
+        """
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        if labels is None:
+            labels = [f'Trajectory {i+1}' for i in range(len(trajectories))]
+        
+        for i, (traj, label) in enumerate(zip(trajectories, labels)):
+            color = self.colors[i % len(self.colors)]
+            
+            ax.plot(traj['lon'], traj['lat'], color=color, alpha=0.7, 
+                   linewidth=2, label=label)
+            
+            # Mark start and end points
+            ax.scatter(traj['lon'].iloc[0], traj['lat'].iloc[0], 
+                      c=color, s=80, marker='o', alpha=0.8)
+            ax.scatter(traj['lon'].iloc[-1], traj['lat'].iloc[-1], 
+                      c=color, s=80, marker='s', alpha=0.8)
+        
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        return fig
     
-    # Draw edges with weights as width
-    edge_widths = []
-    if nx.get_edge_attributes(graph, 'weight'):
-        weights = nx.get_edge_attributes(graph, 'weight')
-        max_weight = max(weights.values())
-        for u, v in graph.edges():
-            width = edge_width * weights.get((u, v), 1) / max_weight
-            edge_widths.append(width)
-    else:
-        edge_widths = [edge_width] * len(graph.edges())
+    def plot_prediction_comparison(self,
+                                 true_trajectory: pd.DataFrame,
+                                 predicted_trajectory: pd.DataFrame,
+                                 input_sequence: Optional[pd.DataFrame] = None,
+                                 title: str = "Trajectory Prediction",
+                                 save_path: Optional[str] = None,
+                                 figsize: Tuple[int, int] = (12, 8)) -> plt.Figure:
+        """
+        Plot comparison between true and predicted trajectories.
+        
+        Args:
+            true_trajectory: True trajectory DataFrame
+            predicted_trajectory: Predicted trajectory DataFrame
+            input_sequence: Optional input sequence used for prediction
+            title: Plot title
+            save_path: Optional path to save the plot
+            figsize: Figure size
+            
+        Returns:
+            Matplotlib figure
+        """
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Plot input sequence if provided
+        if input_sequence is not None:
+            ax.plot(input_sequence['lon'], input_sequence['lat'], 
+                   'k-', linewidth=3, alpha=0.8, label='Input Sequence')
+            ax.scatter(input_sequence['lon'].iloc[-1], input_sequence['lat'].iloc[-1],
+                      c='black', s=100, marker='o', label='Prediction Start')
+        
+        # Plot true trajectory
+        ax.plot(true_trajectory['lon'], true_trajectory['lat'], 
+               'g-', linewidth=2, alpha=0.8, label='True Trajectory')
+        ax.scatter(true_trajectory['lon'].iloc[0], true_trajectory['lat'].iloc[0],
+                  c='green', s=80, marker='o')
+        ax.scatter(true_trajectory['lon'].iloc[-1], true_trajectory['lat'].iloc[-1],
+                  c='green', s=80, marker='s')
+        
+        # Plot predicted trajectory
+        ax.plot(predicted_trajectory['lon'], predicted_trajectory['lat'], 
+               'r--', linewidth=2, alpha=0.8, label='Predicted Trajectory')
+        ax.scatter(predicted_trajectory['lon'].iloc[0], predicted_trajectory['lat'].iloc[0],
+                  c='red', s=80, marker='o')
+        ax.scatter(predicted_trajectory['lon'].iloc[-1], predicted_trajectory['lat'].iloc[-1],
+                  c='red', s=80, marker='s')
+        
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        return fig
     
-    nx.draw_networkx_edges(
-        graph, positions,
-        width=edge_widths,
-        alpha=0.5,
-        edge_color='gray',
-        ax=ax
-    )
+    def create_interactive_map(self,
+                             trajectories: List[pd.DataFrame],
+                             labels: Optional[List[str]] = None,
+                             center_lat: Optional[float] = None,
+                             center_lon: Optional[float] = None,
+                             zoom_start: int = 10) -> folium.Map:
+        """
+        Create an interactive map with trajectories.
+        
+        Args:
+            trajectories: List of trajectory DataFrames
+            labels: Optional labels for each trajectory
+            center_lat: Map center latitude (auto-calculated if None)
+            center_lon: Map center longitude (auto-calculated if None)
+            zoom_start: Initial zoom level
+            
+        Returns:
+            Folium map object
+        """
+        if labels is None:
+            labels = [f'Trajectory {i+1}' for i in range(len(trajectories))]
+        
+        # Calculate center if not provided
+        if center_lat is None or center_lon is None:
+            all_lats = []
+            all_lons = []
+            for traj in trajectories:
+                all_lats.extend(traj['lat'].tolist())
+                all_lons.extend(traj['lon'].tolist())
+            
+            center_lat = np.mean(all_lats)
+            center_lon = np.mean(all_lons)
+        
+        # Create map
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom_start)
+        
+        colors = ['red', 'blue', 'green', 'purple', 'orange', 'darkred', 
+                 'lightred', 'beige', 'darkblue', 'darkgreen']
+        
+        for i, (traj, label) in enumerate(zip(trajectories, labels)):
+            color = colors[i % len(colors)]
+            
+            # Add trajectory line
+            coordinates = [[row['lat'], row['lon']] for _, row in traj.iterrows()]
+            folium.PolyLine(
+                coordinates,
+                color=color,
+                weight=3,
+                opacity=0.8,
+                popup=label
+            ).add_to(m)
+            
+            # Add start marker
+            folium.Marker(
+                [traj['lat'].iloc[0], traj['lon'].iloc[0]],
+                popup=f'{label} - Start',
+                icon=folium.Icon(color=color, icon='play')
+            ).add_to(m)
+            
+            # Add end marker
+            folium.Marker(
+                [traj['lat'].iloc[-1], traj['lon'].iloc[-1]],
+                popup=f'{label} - End',
+                icon=folium.Icon(color=color, icon='stop')
+            ).add_to(m)
+        
+        return m
     
-    ax.set_title('Maritime Traffic Graph')
-    ax.axis('off')
-    
-    return fig, ax
+    def plot_metrics_dashboard(self,
+                             metrics_history: Dict[str, List[float]],
+                             title: str = "Training Metrics",
+                             save_path: Optional[str] = None,
+                             figsize: Tuple[int, int] = (15, 10)) -> plt.Figure:
+        """
+        Plot a dashboard of training metrics.
+        
+        Args:
+            metrics_history: Dictionary with metric names and their values over time
+            title: Dashboard title
+            save_path: Optional path to save the plot
+            figsize: Figure size
+            
+        Returns:
+            Matplotlib figure
+        """
+        n_metrics = len(metrics_history)
+        n_cols = 2
+        n_rows = (n_metrics + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        if n_rows == 1:
+            axes = axes.reshape(1, -1)
+        
+        for i, (metric_name, values) in enumerate(metrics_history.items()):
+            row = i // n_cols
+            col = i % n_cols
+            
+            ax = axes[row, col]
+            ax.plot(values, linewidth=2)
+            ax.set_title(metric_name)
+            ax.set_xlabel('Epoch')
+            ax.set_ylabel('Value')
+            ax.grid(True, alpha=0.3)
+        
+        # Hide unused subplots
+        for i in range(n_metrics, n_rows * n_cols):
+            row = i // n_cols
+            col = i % n_cols
+            axes[row, col].set_visible(False)
+        
+        plt.suptitle(title, fontsize=16)
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        
+        return fig
 
-def visualize_attention_weights(attention_weights, input_sequence, figsize=(10, 8)):
-    """
-    Visualize attention weights from transformer model
-    
-    Args:
-        attention_weights: Attention weight matrix
-        input_sequence: Input sequence tokens/timestamps
-        figsize: Figure size
-        
-    Returns:
-        Figure and axes objects
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Convert to numpy if tensor
-    if isinstance(attention_weights, torch.Tensor):
-        attention_weights = attention_weights.detach().cpu().numpy()
-    
-    # Create heatmap
-    sns.heatmap(
-        attention_weights,
-        cmap='viridis',
-        ax=ax,
-        xticklabels=input_sequence,
-        yticklabels=input_sequence
-    )
-    
-    ax.set_title('Attention Weights')
-    ax.set_xlabel('Input Sequence')
-    ax.set_ylabel('Output Sequence')
-    
-    plt.tight_layout()
-    
-    return fig, ax
-
-def plot_prediction_uncertainty(trajectories, ground_truth=None, figsize=(12, 8)):
-    """
-    Visualize prediction uncertainty with multiple sampled trajectories
-    
-    Args:
-        trajectories: List of predicted trajectories
-        ground_truth: Optional ground truth trajectory
-        figsize: Figure size
-        
-    Returns:
-        Figure and axes objects
-    """
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Convert trajectories to numpy if tensor
-    if isinstance(trajectories[0], torch.Tensor):
-        trajectories = [t.detach().cpu().numpy() for t in trajectories]
-    
-    # Plot all predicted trajectories with transparency
-    for traj in trajectories:
-        ax.plot(traj[:, 1], traj[:, 0], 'r-', alpha=0.1)
-    
-    # Calculate and plot mean trajectory
-    mean_traj = np.mean(np.array(trajectories), axis=0)
-    ax.plot(mean_traj[:, 1], mean_traj[:, 0], 'r-', linewidth=2, label='Mean Prediction')
-    
-    # Plot ground truth if provided
-    if ground_truth is not None:
-        if isinstance(ground_truth, torch.Tensor):
-            ground_truth = ground_truth.detach().cpu().numpy()
-        ax.plot(ground_truth[:, 1], ground_truth[:, 0], 'g-', linewidth=2, label='Ground Truth')
-    
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    ax.set_title(f'Prediction Uncertainty ({len(trajectories)} samples)')
-    ax.grid(True)
-    ax.legend()
-    
-    return fig, ax
-
-def create_animation(trajectories, figsize=(10, 8), interval=200):
-    """
-    Create an animation of vessel movements
-    
-    Args:
-        trajectories: List of DataFrames with lat, lon columns
-        figsize: Figure size
-        interval: Interval between frames in milliseconds
-        
-    Returns:
-        Animation object
-    """
-    from matplotlib.animation import FuncAnimation
-    
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Calculate bounds
-    all_lats = []
-    all_lons = []
-    
-    for traj in trajectories:
-        all_lats.extend(traj['lat'].tolist())
-        all_lons.extend(traj['lon'].tolist())
-    
-    min_lat, max_lat = min(all_lats), max(all_lats)
-    min_lon, max_lon = min(all_lons), max(all_lons)
-    
-    # Add some padding
-    lat_padding = (max_lat - min_lat) * 0.1
-    lon_padding = (max_lon - min_lon) * 0.1
-    
-    ax.set_xlim(min_lon - lon_padding, max_lon + lon_padding)
-    ax.set_ylim(min_lat - lat_padding, max_lat + lat_padding)
-    
-    # Setup plot
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
-    ax.set_title('Vessel Movements')
-    ax.grid(True)
-    
-    # Create line objects
-    lines = []
-    points = []
-    
-    for _ in trajectories:
-        line, = ax.plot([], [], '-')
-        point, = ax.plot([], [], 'o')
-        lines.append(line)
-        points.append(point)
-    
-    def init():
-        for line, point in zip(lines, points):
-            line.set_data([], [])
-            point.set_data([], [])
-        return lines + points
-    
-    def animate(frame):
-        for i, (line, point, traj) in enumerate(zip(lines, points, trajectories)):
-            if frame < len(traj):
-                # Plot trajectory up to current frame
-                line.set_data(traj['lon'].iloc[:frame], traj['lat'].iloc[:frame])
-                # Plot current position
-                point.set_data([traj['lon'].iloc[frame-1]], [traj['lat'].iloc[frame-1]])
-            else:
-                # Keep the full trajectory if we've passed its length
-                line.set_data(traj['lon'], traj['lat'])
-                point.set_data([traj['lon'].iloc[-1]], [traj['lat'].iloc[-1]])
-        
-        return lines + points
-    
-    # Find max length
-    max_length = max(len(traj) for traj in trajectories)
-    
-    # Create animation
-    anim = FuncAnimation(
-        fig, animate, init_func=init,
-        frames=max_length, interval=interval, blit=True
-    )
-    
-    return anim
