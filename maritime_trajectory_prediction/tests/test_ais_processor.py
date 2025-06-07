@@ -1,5 +1,5 @@
 """
-Tests for AIS data processing functionality.
+Updated tests for AIS data processing functionality.
 """
 import os
 import json
@@ -9,57 +9,66 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 
-# Test JSON serialization
-def test_json_serialization():
-    """Test that NumPy types can be serialized to JSON."""
-    test_data = {
-        "lat": np.float32(59.123), 
-        "lon": np.float32(10.456),
-        "sog": np.float64(8.7),
-        "cog": np.int32(45),
-        "values": np.array([1.2, 3.4, 5.6], dtype=np.float32)
-    }
-    
-    # Convert NumPy types to Python native types
-    json_str = json.dumps(test_data, default=lambda x: 
-        float(x) if isinstance(x, np.number) 
-        else x.tolist() if isinstance(x, np.ndarray) 
-        else x)
-    
-    # Deserialize and check values
-    deserialized = json.loads(json_str)
-    assert isinstance(deserialized["lat"], float)
-    assert isinstance(deserialized["lon"], float)
-    assert isinstance(deserialized["sog"], float)
-    assert isinstance(deserialized["cog"], float)
-    assert isinstance(deserialized["values"], list)
-    assert len(deserialized["values"]) == 3
-    
-    # Verify values match
-    assert abs(deserialized["lat"] - 59.123) < 0.001
-    assert abs(deserialized["lon"] - 10.456) < 0.001
+# Import from the refactored package structure
+from maritime_trajectory_prediction.src.utils.ais_parser import AISParser
+from maritime_trajectory_prediction.src.utils.maritime_utils import MaritimeUtils
+from maritime_trajectory_prediction.src.data.ais_processor import AISProcessor
 
 
-# Test loading AIS data
-def test_load_ais_data():
-    """Test loading AIS data from processed files."""
-    from src.utils.ais_parser import load_processed_ais_data
+class TestJSONSerialization:
+    """Test JSON serialization functionality."""
     
-    # Create a simple DataFrame for testing
-    test_df = pd.DataFrame({
-        'mmsi': [123456789, 123456789, 987654321],
-        'timestamp': pd.to_datetime(['2023-01-01 12:00:00', '2023-01-01 12:05:00', '2023-01-01 12:10:00']),
-        'lat': [59.123, 59.124, 59.200],
-        'lon': [10.456, 10.457, 10.500]
-    })
+    def test_json_serialization(self):
+        """Test that NumPy types can be serialized to JSON."""
+        test_data = {
+            "lat": np.float32(59.123), 
+            "lon": np.float32(10.456),
+            "sog": np.float64(8.7),
+            "cog": np.int32(45),
+            "values": np.array([1.2, 3.4, 5.6], dtype=np.float32)
+        }
+        
+        # Convert NumPy types to Python native types
+        json_str = json.dumps(test_data, default=lambda x: 
+            float(x) if isinstance(x, np.number) 
+            else x.tolist() if isinstance(x, np.ndarray) 
+            else x)
+        
+        # Deserialize and check values
+        deserialized = json.loads(json_str)
+        assert isinstance(deserialized["lat"], float)
+        assert isinstance(deserialized["lon"], float)
+        assert isinstance(deserialized["sog"], float)
+        assert isinstance(deserialized["cog"], float)
+        assert isinstance(deserialized["values"], list)
+        assert len(deserialized["values"]) == 3
+        
+        # Verify values match
+        assert abs(deserialized["lat"] - 59.123) < 0.001
+        assert abs(deserialized["lon"] - 10.456) < 0.001
+
+
+class TestAISParser:
+    """Test AIS parser functionality."""
     
-    # Save to a temporary CSV file
-    temp_file = 'temp_test_data.csv'
-    test_df.to_csv(temp_file, index=False)
-    
-    try:
+    def test_load_csv_data(self, tmp_path):
+        """Test loading AIS data from CSV files."""
+        parser = AISParser()
+        
+        # Create a simple DataFrame for testing
+        test_df = pd.DataFrame({
+            'mmsi': [123456789, 123456789, 987654321],
+            'timestamp': ['2023-01-01 12:00:00', '2023-01-01 12:05:00', '2023-01-01 12:10:00'],
+            'lat': [59.123, 59.124, 59.200],
+            'lon': [10.456, 10.457, 10.500]
+        })
+        
+        # Save to a temporary CSV file
+        temp_file = tmp_path / 'test_data.csv'
+        test_df.to_csv(temp_file, index=False)
+        
         # Test loading
-        loaded_df = load_processed_ais_data(temp_file)
+        loaded_df = parser.load_processed_ais_data(temp_file)
         
         # Check shape and data types
         assert loaded_df.shape == test_df.shape
@@ -67,61 +76,141 @@ def test_load_ais_data():
         assert 'mmsi' in loaded_df.columns
         assert 'lat' in loaded_df.columns
         assert 'lon' in loaded_df.columns
+    
+    def test_get_vessel_trajectories(self):
+        """Test extracting vessel trajectories."""
+        parser = AISParser()
         
-    finally:
-        # Clean up
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
+        # Create test data
+        test_df = pd.DataFrame({
+            'mmsi': [123456789, 123456789, 987654321, 987654321],
+            'timestamp': pd.to_datetime([
+                '2023-01-01 12:00:00', '2023-01-01 12:05:00',
+                '2023-01-01 12:10:00', '2023-01-01 12:15:00'
+            ]),
+            'lat': [59.0, 59.01, 59.1, 59.11],
+            'lon': [10.0, 10.01, 10.1, 10.11]
+        })
+        
+        # Get trajectories
+        trajectories = parser.get_vessel_trajectories(test_df)
+        
+        # Should have 2 trajectories (one per MMSI)
+        assert len(trajectories) == 2
+        assert all(len(traj) == 2 for traj in trajectories)
 
 
-# Test trajectory feature calculation
-def test_feature_calculation():
-    """Test calculating trajectory features."""
-    # We'll create a simple trajectory for testing
-    trajectory = pd.DataFrame({
-        'mmsi': [123456789] * 5,
-        'timestamp': pd.to_datetime([
-            '2023-01-01 12:00:00', 
-            '2023-01-01 12:05:00',
-            '2023-01-01 12:10:00',
-            '2023-01-01 12:15:00',
-            '2023-01-01 12:20:00'
-        ]),
-        'lat': [59.0, 59.01, 59.02, 59.03, 59.04],
-        'lon': [10.0, 10.01, 10.02, 10.03, 10.04],
-        'sog': [10.0, 10.5, 11.0, 10.5, 10.0],
-        'cog': [90.0, 90.0, 91.0, 92.0, 90.0]
-    })
+class TestMaritimeUtils:
+    """Test maritime utility functions."""
     
-    # Import the function from the main module (should be in ais_utils or similar)
-    # This is a placeholder - in a real test we'd import the actual function
-    def calculate_trajectory_features(traj):
-        """Simple implementation for testing"""
-        result = traj.copy()
-        # Calculate time deltas in seconds
-        result['time_delta'] = result['timestamp'].diff().dt.total_seconds().fillna(0)
+    def test_haversine_distance(self):
+        """Test haversine distance calculation."""
+        # Test known distance (approximately)
+        lat1, lon1 = 59.0, 10.0
+        lat2, lon2 = 59.01, 10.01
         
-        # Calculate distances (simplified for testing)
-        result['distance_km'] = np.sqrt(
-            (result['lat'].diff() * 111) ** 2 + 
-            (result['lon'].diff() * 111 * np.cos(np.radians(result['lat']))) ** 2
-        ).fillna(0)
+        distance = MaritimeUtils.haversine_distance(lat1, lon1, lat2, lon2)
         
-        # Calculate speed and course changes
-        result['speed_delta'] = result['sog'].diff().fillna(0)
-        result['course_delta'] = result['cog'].diff().fillna(0)
+        # Should be approximately 1.3 km
+        assert 1.0 < distance < 2.0
+    
+    def test_calculate_distances(self):
+        """Test distance calculation for trajectory."""
+        lats = np.array([59.0, 59.01, 59.02])
+        lons = np.array([10.0, 10.01, 10.02])
         
-        return result
+        distances = MaritimeUtils.calculate_distances(lats, lons)
+        
+        # First distance should be 0
+        assert distances[0] == 0
+        # Other distances should be positive
+        assert all(d > 0 for d in distances[1:])
     
-    # Calculate features
-    traj_with_features = calculate_trajectory_features(trajectory)
+    def test_calculate_bearing(self):
+        """Test bearing calculation."""
+        lat1, lon1 = 59.0, 10.0
+        lat2, lon2 = 59.01, 10.01
+        
+        bearing = MaritimeUtils.calculate_bearing(lat1, lon1, lat2, lon2)
+        
+        # Should be between 0 and 360
+        assert 0 <= bearing <= 360
     
-    # Check that new columns exist
-    assert 'distance_km' in traj_with_features.columns
-    assert 'speed_delta' in traj_with_features.columns
-    assert 'course_delta' in traj_with_features.columns
+    def test_is_valid_position(self):
+        """Test position validation."""
+        assert MaritimeUtils.is_valid_position(59.0, 10.0)
+        assert not MaritimeUtils.is_valid_position(91.0, 10.0)  # Invalid latitude
+        assert not MaritimeUtils.is_valid_position(59.0, 181.0)  # Invalid longitude
     
-    # Check values
-    assert traj_with_features['distance_km'].iloc[1] > 0
-    assert traj_with_features['speed_delta'].iloc[1] == 0.5
-    assert traj_with_features['course_delta'].iloc[2] == 1.0
+    def test_is_valid_speed(self):
+        """Test speed validation."""
+        assert MaritimeUtils.is_valid_speed(10.0)
+        assert not MaritimeUtils.is_valid_speed(-1.0)  # Negative speed
+        assert not MaritimeUtils.is_valid_speed(100.0)  # Too fast
+
+
+class TestAISProcessor:
+    """Test AIS data processor."""
+    
+    def test_initialization(self):
+        """Test processor initialization."""
+        processor = AISProcessor()
+        
+        assert processor.min_points_per_trajectory == 10
+        assert processor.max_time_gap_hours == 6.0
+        assert processor.min_speed_knots == 0.1
+        assert processor.max_speed_knots == 50.0
+    
+    def test_clean_ais_data(self):
+        """Test data cleaning functionality."""
+        processor = AISProcessor()
+        
+        # Create test data with some invalid entries
+        test_df = pd.DataFrame({
+            'mmsi': [123456789, 123456789, 123456789, 123456789],
+            'lat': [59.0, 91.0, 59.02, 59.03],  # One invalid latitude
+            'lon': [10.0, 10.01, 181.0, 10.03],  # One invalid longitude
+            'sog': [10.0, 10.5, 100.0, 10.0],  # One invalid speed
+            'cog': [90.0, 90.0, 91.0, 92.0]
+        })
+        
+        cleaned_df = processor.clean_ais_data(test_df)
+        
+        # Should have only 2 valid records (first and last)
+        # Second has invalid lat, third has invalid lon and speed
+        assert len(cleaned_df) == 2
+        assert cleaned_df.iloc[0]['lat'] == 59.0
+        assert cleaned_df.iloc[1]['lat'] == 59.03
+    
+    def test_get_trajectory_sequences(self):
+        """Test trajectory sequence extraction."""
+        processor = AISProcessor()
+        
+        # Create test data with enough points
+        test_df = pd.DataFrame({
+            'mmsi': [123456789] * 30,
+            'segment_id': [0] * 30,
+            'lat': np.linspace(59.0, 59.1, 30),
+            'lon': np.linspace(10.0, 10.1, 30),
+            'sog': [10.0] * 30,
+            'cog': [90.0] * 30
+        })
+        
+        sequences = processor.get_trajectory_sequences(
+            test_df, sequence_length=10, prediction_horizon=5
+        )
+        
+        # Should have sequences
+        assert len(sequences) > 0
+        
+        # Check sequence structure
+        seq = sequences[0]
+        assert 'input_sequence' in seq
+        assert 'target_sequence' in seq
+        assert 'mmsi' in seq
+        assert 'segment_id' in seq
+        
+        # Check sequence lengths
+        assert len(seq['input_sequence']) == 10
+        assert len(seq['target_sequence']) == 5
+
