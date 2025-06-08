@@ -9,7 +9,7 @@ import tempfile
 import json
 from datetime import datetime
 
-from src.data.ais_processor import AISProcessor, load_ais_data, preprocess_ais_data
+from src.data.maritime_message_processor import AISProcessor, load_ais_data, preprocess_ais_data
 
 
 class TestAISProcessor:

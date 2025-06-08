@@ -160,7 +160,7 @@ class TestModuleImports:
             pytest.fail("Failed to import AISProcessor")
         
         try:
-            from src.data.ais_processor import load_ais_data, preprocess_ais_data
+            from src.data.maritime_message_processor import load_ais_data, preprocess_ais_data
             assert load_ais_data is not None
             assert preprocess_ais_data is not None
         except ImportError:
@@ -202,7 +202,7 @@ class TestErrorHandling:
     
     def test_ais_processor_error_handling(self):
         """Test AIS processor error handling."""
-        from src.data.ais_processor import AISProcessor
+        from src.data.maritime_message_processor import AISProcessor
         
         processor = AISProcessor()
         
@@ -236,7 +236,7 @@ class TestErrorHandling:
     
     def test_data_cleaning_edge_cases(self):
         """Test data cleaning with edge cases."""
-        from src.data.ais_processor import AISProcessor
+        from src.data.maritime_message_processor import AISProcessor
         
         processor = AISProcessor()
         

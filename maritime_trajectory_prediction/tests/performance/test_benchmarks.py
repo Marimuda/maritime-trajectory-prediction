@@ -14,7 +14,7 @@ import os
 
 from maritime_trajectory_prediction.src.utils.ais_parser import AISParser
 from maritime_trajectory_prediction.src.utils.maritime_utils import MaritimeUtils
-from maritime_trajectory_prediction.src.data.ais_processor import AISProcessor
+from maritime_trajectory_prediction.src.data.maritime_message_processor import AISProcessor
 
 
 class TestDataLoadingPerformance:

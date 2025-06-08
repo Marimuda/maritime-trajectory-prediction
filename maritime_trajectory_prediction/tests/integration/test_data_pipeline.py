@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 import tempfile
 
-from src.data.ais_processor import AISProcessor
+from src.data.maritime_message_processor import AISProcessor
 from src.utils.maritime_utils import MaritimeUtils
 
 

@@ -16,7 +16,7 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
 from maritime_trajectory_prediction.src.utils.ais_parser import load_processed_ais_data, get_vessel_trajectories, prepare_trajectory_for_prediction
-from maritime_trajectory_prediction.src.models.factory import load_model
+from maritime_trajectory_prediction.src.models.model_factory import load_model
 from maritime_trajectory_prediction.src.utils.visualization import plot_prediction_vs_ground_truth
 
 

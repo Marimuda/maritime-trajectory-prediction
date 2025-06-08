@@ -198,7 +198,7 @@ def maritime_utils():
 @pytest.fixture
 def ais_processor():
     """Provide an AISProcessor instance with test configuration."""
-    from maritime_trajectory_prediction.src.data.ais_processor import AISProcessor
+    from maritime_trajectory_prediction.src.data.maritime_message_processor import AISProcessor
     return AISProcessor(
         min_points_per_trajectory=5,  # Lower for testing
         max_time_gap_hours=12.0,

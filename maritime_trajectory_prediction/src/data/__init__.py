@@ -1,10 +1,10 @@
 """
 Updated data module __init__.py with pipeline components.
 """
-from .ais_processor import AISProcessor
+from .maritime_message_processor import AISProcessor
 from .multi_task_processor import AISMultiTaskProcessor, MLTask
 from .pipeline import DataPipeline, BaseDatasetBuilder, DatasetConfig, DatasetMetadata, DatasetFormat
-from .builders import (
+from .dataset_builders import (
     TrajectoryPredictionBuilder, 
     AnomalyDetectionBuilder, 
     GraphNetworkBuilder, 

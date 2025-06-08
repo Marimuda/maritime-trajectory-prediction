@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from maritime_trajectory_prediction.src.data.pipeline import (
     DataPipeline, BaseDatasetBuilder, DatasetConfig, DatasetMetadata, DatasetFormat
 )
-from maritime_trajectory_prediction.src.data.builders import (
+from maritime_trajectory_prediction.src.data.dataset_builders import (
     TrajectoryPredictionBuilder, AnomalyDetectionBuilder, 
     GraphNetworkBuilder, CollisionAvoidanceBuilder
 )

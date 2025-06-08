@@ -13,7 +13,7 @@ from typing import Optional, List, Dict, Any
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
 
-from .ais_processor import AISProcessor
+from .maritime_message_processor import AISProcessor
 
 
 class AISDataset(Dataset):

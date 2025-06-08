@@ -24,7 +24,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from models import create_model, get_model_info
 from models.anomaly_transformer import create_maritime_anomaly_transformer
 from models.motion_transformer import create_maritime_motion_transformer
-from data.ais_processor import AISProcessor
+from data.maritime_message_processor import AISProcessor
 from utils.maritime_utils import MaritimeUtils
 from utils.visualization import TrajectoryVisualizer
 

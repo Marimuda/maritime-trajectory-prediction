@@ -18,7 +18,7 @@ __author__ = "Jákup Svøðstein"
 __email__ = "jakupsv@setur.fo"
 
 # Selective re-exports for flat API - only core, stable components
-from .src.data.ais_processor import AISProcessor
+from .src.data.maritime_message_processor import AISProcessor
 from .src.data.datamodule import AISDataModule
 
 # Define public API

@@ -28,11 +28,11 @@ def create_model(config):
         return AISFuserLightning(config)
     
     elif model_type == "xgboost":
-        from src.models.baselines import XGBoostModel
+        from src.models.benchmark_models import XGBoostModel
         return XGBoostModel(config)
     
     elif model_type == "lstm":
-        from src.models.baselines import LSTMModel
+        from src.models.benchmark_models import LSTMModel
         return LSTMModel(config)
     
     else:
