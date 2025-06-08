@@ -154,7 +154,7 @@ Use the unified training script for all models:
 
 ```bash
 # Train Anomaly Transformer
-python train_sota.py \
+python train_transformer_models.py \
   --model-type anomaly_transformer \
   --size medium \
   --epochs 50 \
@@ -162,7 +162,7 @@ python train_sota.py \
   --learning-rate 1e-4
 
 # Train Motion Transformer
-python train_sota.py \
+python train_transformer_models.py \
   --model-type motion_transformer \
   --size small \
   --epochs 100 \
@@ -176,14 +176,14 @@ Use the unified inference script:
 
 ```bash
 # Anomaly detection
-python inference_sota.py \
+python inference_transformer_models.py \
   --model-path checkpoints/anomaly_transformer/best_model.pt \
   --data-path data/test_trajectories.csv \
   --task anomaly_detection \
   --threshold 0.7
 
 # Trajectory prediction
-python inference_sota.py \
+python inference_transformer_models.py \
   --model-path checkpoints/motion_transformer/best_model.pt \
   --data-path data/test_trajectories.csv \
   --task trajectory_prediction \
@@ -218,7 +218,7 @@ data:
 ### Command Line
 
 ```bash
-python train_sota.py --config configs/motion_transformer_medium.yaml
+python train_transformer_models.py --config configs/motion_transformer_medium.yaml
 ```
 
 ## Performance Benchmarks

@@ -63,14 +63,14 @@ print(f"Predicted trajectory shape: {predictions.shape}")
 
 ```bash
 # Train Anomaly Transformer
-python train_sota.py \
+python train_transformer_models.py \
   --model-type anomaly_transformer \
   --size medium \
   --epochs 50 \
   --batch-size 16
 
 # Train Motion Transformer
-python train_sota.py \
+python train_transformer_models.py \
   --model-type motion_transformer \
   --size small \
   --epochs 100 \
@@ -81,13 +81,13 @@ python train_sota.py \
 
 ```bash
 # Anomaly detection
-python inference_sota.py \
+python inference_transformer_models.py \
   --model-path checkpoints/anomaly_transformer/best_model.pt \
   --data-path data/trajectories.csv \
   --task anomaly_detection
 
 # Trajectory prediction
-python inference_sota.py \
+python inference_transformer_models.py \
   --model-path checkpoints/motion_transformer/best_model.pt \
   --data-path data/trajectories.csv \
   --task trajectory_prediction
@@ -184,7 +184,7 @@ A multi-modal fusion model that combines:
 The package uses YAML-based configuration management with command-line overrides:
 
 ```yaml
-# configs/sota_configs.yaml
+# configs/transformer_model_configs.yaml
 model:
   type: "motion_transformer"
   size: "medium"
