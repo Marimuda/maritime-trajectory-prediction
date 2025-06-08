@@ -1,0 +1,32 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+
+# Types:
+# feat: A new feature
+# fix: A bug fix
+# docs: Documentation only changes
+# style: Changes that do not affect the meaning of the code
+# refactor: A code change that neither fixes a bug nor adds a feature
+# perf: A code change that improves performance
+# test: Adding missing tests or correcting existing tests
+# build: Changes that affect the build system or external dependencies
+# ci: Changes to CI configuration files and scripts
+# chore: Other changes that don't modify src or test files
+
+# Scope examples: data, models, utils, experiments, configs
+
+# Subject line (50 chars max):
+# - Use imperative mood ("add", not "added" or "adds")
+# - Don't capitalize first letter
+# - No period at the end
+
+# Body (72 chars per line):
+# - Explain what and why, not how
+# - Can include multiple paragraphs
+
+# Footer:
+# - Reference issues: "Closes #123"
+# - Breaking changes: "BREAKING CHANGE: API changed"
