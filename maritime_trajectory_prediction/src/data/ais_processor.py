@@ -1,261 +1,257 @@
 """
-AIS data processor for maritime trajectory prediction.
-
-This module provides functionality to process raw AIS data into formats
-suitable for machine learning models.
+Fixed AIS data processor with proper imports and real data handling.
 """
-
+import logging
+import re
+import json
+from typing import Dict, List, Optional, Union, Tuple
+from pathlib import Path
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Optional, Tuple, Union
-from pathlib import Path
-import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from ..utils.maritime_utils import MaritimeUtils
-from ..utils.ais_parser import AISParser
+try:
+    import orjson
+    HAS_ORJSON = True
+except ImportError:
+    HAS_ORJSON = False
 
 logger = logging.getLogger(__name__)
 
 
 class AISProcessor:
     """
-    Processes raw AIS data for trajectory prediction models.
-    
-    This class handles data cleaning, feature engineering, and trajectory
-    segmentation for AIS data.
+    Enhanced AIS data processor following guideline recommendations.
     """
     
-    def __init__(self, 
-                 min_points_per_trajectory: int = 10,
-                 max_time_gap_hours: float = 6.0,
-                 min_speed_knots: float = 0.1,
-                 max_speed_knots: float = 50.0):
-        """
-        Initialize AIS processor.
+    def __init__(self):
+        """Initialize the AIS processor."""
+        # Regex pattern for log line validation
+        self.pattern = re.compile(r"^\d{4}-\d{2}-\d{2} .* - ")
         
-        Args:
-            min_points_per_trajectory: Minimum number of points required for a valid trajectory
-            max_time_gap_hours: Maximum time gap between points before splitting trajectory
-            min_speed_knots: Minimum valid speed in knots
-            max_speed_knots: Maximum valid speed in knots
-        """
-        self.min_points_per_trajectory = min_points_per_trajectory
-        self.max_time_gap_hours = max_time_gap_hours
-        self.min_speed_knots = min_speed_knots
-        self.max_speed_knots = max_speed_knots
+        # ITU-R M.1371 sentinel values
+        self.sentinel_values = {
+            'lat': 91.0,
+            'lon': 181.0,
+            'speed': 102.3,
+            'heading': 511,
+            'draught': 25.5
+        }
         
-        self.maritime_utils = MaritimeUtils()
-        self.ais_parser = AISParser()
+        # CF-compliant field mappings
+        self.field_mapping = {
+            'lat': 'latitude',
+            'lon': 'longitude',
+            'speed': 'sog',
+            'course': 'cog'
+        }
         
-    def load_ais_data(self, file_path: Union[str, Path]) -> pd.DataFrame:
-        """
-        Load AIS data from various file formats.
+        # Message type classifications
+        self.msg_classes = {
+            1: "A_pos", 2: "A_pos", 3: "A_pos",
+            4: "Base_pos", 5: "Static",
+            18: "B_pos", 21: "ATON", 24: "StaticB"
+        }
         
-        Args:
-            file_path: Path to AIS data file
-            
-        Returns:
-            DataFrame with raw AIS data
-        """
-        return self.ais_parser.load_processed_ais_data(file_path)
+        self.stats = {
+            'lines_processed': 0,
+            'valid_records': 0,
+            'filtered_records': 0,
+            'error_records': 0
+        }
+    
+    def parse_line(self, line: str) -> Optional[Dict]:
+        """Parse a single AIS log line."""
+        self.stats['lines_processed'] += 1
+        
+        # Handle None or non-string input
+        if not isinstance(line, str):
+            self.stats['error_records'] += 1
+            return None
+        
+        # Fast reject non-matching lines
+        if not self.pattern.match(line):
+            self.stats['filtered_records'] += 1
+            return None
+        
+        # Split timestamp and payload
+        try:
+            _, payload = line.split(" - ", 1)
+        except ValueError:
+            self.stats['error_records'] += 1
+            return None
+        
+        # Skip non-JSON lines (engine chatter)
+        if not payload.startswith("{"):
+            self.stats['filtered_records'] += 1
+            return None
+        
+        # Parse JSON
+        try:
+            if HAS_ORJSON:
+                rec = orjson.loads(payload)
+            else:
+                rec = json.loads(payload)
+        except (json.JSONDecodeError, ValueError):
+            self.stats['error_records'] += 1
+            return None
+        
+        # Validate required fields
+        if not isinstance(rec, dict) or 'type' not in rec:
+            self.stats['error_records'] += 1
+            return None
+        
+        # Parse timestamp
+        if 'rxtime' in rec:
+            try:
+                rec['time'] = pd.to_datetime(
+                    rec['rxtime'], 
+                    format="%Y%m%d%H%M%S", 
+                    utc=True
+                )
+            except (ValueError, TypeError):
+                self.stats['error_records'] += 1
+                return None
+        else:
+            self.stats['error_records'] += 1
+            return None
+        
+        # Apply CF-compliant field mappings
+        for old_key, new_key in self.field_mapping.items():
+            if old_key in rec:
+                rec[new_key] = rec.pop(old_key)
+        
+        # Handle sentinel values → NaN
+        for field, sentinel in self.sentinel_values.items():
+            if field in rec and rec[field] == sentinel:
+                rec[field] = np.nan
+        
+        # Additional range validation
+        if not self._validate_ranges(rec):
+            self.stats['error_records'] += 1
+            return None
+        
+        # Classify message type
+        msg_type = rec.get('type', 0)
+        rec['msg_class'] = self.msg_classes.get(msg_type, "Other")
+        
+        self.stats['valid_records'] += 1
+        return rec
+    
+    def _validate_ranges(self, rec: Dict) -> bool:
+        """Validate and clean field ranges."""
+        # Latitude validation
+        if 'latitude' in rec and rec['latitude'] is not None:
+            if not (-90 <= rec['latitude'] <= 90):
+                rec['latitude'] = np.nan
+        
+        # Longitude validation
+        if 'longitude' in rec and rec['longitude'] is not None:
+            if not (-180 <= rec['longitude'] <= 180):
+                rec['longitude'] = np.nan
+        
+        # Speed validation
+        if 'sog' in rec and rec['sog'] is not None:
+            if rec['sog'] < 0 or rec['sog'] >= 102.2:
+                rec['sog'] = np.nan
+        
+        # MMSI validation - Allow special ranges
+        if 'mmsi' in rec and rec['mmsi'] is not None:
+            mmsi = rec['mmsi']
+            # Standard vessel range: 100M-799M
+            # Base station range: 2M-9M (coastal stations)
+            # Aid to navigation: 990M-999M
+            if not ((100_000_000 <= mmsi <= 799_999_999) or  # Standard vessels
+                    (2_000_000 <= mmsi <= 9_999_999) or      # Base stations/coastal
+                    (990_000_000 <= mmsi <= 999_999_999)):   # Aids to navigation
+                logger.debug(f"Rejecting record with invalid MMSI: {mmsi}")
+                return False
+        
+        return True
+    
+    def process_file(self, file_path: Union[str, Path]) -> pd.DataFrame:
+        """Process an entire AIS log file."""
+        file_path = Path(file_path)
+        records = []
+        
+        logger.info(f"Processing file: {file_path}")
+        
+        # Reset stats
+        self.stats = {
+            'lines_processed': 0,
+            'valid_records': 0,
+            'filtered_records': 0,
+            'error_records': 0
+        }
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    record = self.parse_line(line)
+                    if record:
+                        records.append(record)
+                    
+                    # Progress logging
+                    if line_num % 1000 == 0:
+                        logger.info(f"Processed {line_num} lines, {len(records)} valid records")
+        
+        except Exception as e:
+            logger.error(f"Error processing file {file_path}: {e}")
+            raise
+        
+        logger.info(f"Completed processing: {len(records)} valid records from {file_path}")
+        logger.info(f"Stats: {self.stats}")
+        
+        if not records:
+            return pd.DataFrame()
+        
+        return pd.DataFrame(records)
     
     def clean_ais_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Clean raw AIS data by removing invalid entries.
+        """Clean and validate AIS data."""
+        if df.empty:
+            return df
         
-        Args:
-            df: Raw AIS DataFrame
-            
-        Returns:
-            Cleaned AIS DataFrame
-        """
-        logger.info(f"Cleaning AIS data with {len(df)} initial records")
+        original_count = len(df)
         
         # Remove records with invalid coordinates
-        df = df.dropna(subset=['lat', 'lon'])
-        df = df[(df['lat'].between(-90, 90)) & (df['lon'].between(-180, 180))]
+        df = df.dropna(subset=['latitude', 'longitude'])
         
-        # Remove records with invalid speeds
-        if 'sog' in df.columns:
-            df = df[df['sog'].between(self.min_speed_knots, self.max_speed_knots)]
+        # Remove records with invalid MMSI
+        def is_valid_mmsi(mmsi):
+            if pd.isna(mmsi):
+                return False
+            return ((100_000_000 <= mmsi <= 799_999_999) or
+                    (2_000_000 <= mmsi <= 9_999_999) or
+                    (990_000_000 <= mmsi <= 999_999_999))
         
-        # Remove records with invalid course
-        if 'cog' in df.columns:
-            df = df[df['cog'].between(0, 360) | df['cog'].isna()]
+        df = df[df['mmsi'].apply(is_valid_mmsi)]
         
-        # Sort by MMSI and timestamp
-        if 'timestamp' in df.columns:
-            df = df.sort_values(['mmsi', 'timestamp'])
+        # Sort by time
+        if 'time' in df.columns:
+            df = df.sort_values('time')
         
-        logger.info(f"Cleaned data contains {len(df)} records")
-        return df
-    
-    def engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Engineer features for trajectory prediction.
-        
-        Args:
-            df: Cleaned AIS DataFrame
-            
-        Returns:
-            DataFrame with engineered features
-        """
-        logger.info("Engineering features for trajectory prediction")
-        
-        df = df.copy()
-        
-        # Calculate time-based features
-        if 'timestamp' in df.columns:
-            df['hour'] = df['timestamp'].dt.hour
-            df['day_of_week'] = df['timestamp'].dt.dayofweek
-            df['month'] = df['timestamp'].dt.month
-        
-        # Calculate distance and speed features for each vessel
-        for mmsi, vessel_data in df.groupby('mmsi'):
-            vessel_idx = df['mmsi'] == mmsi
-            
-            # Calculate distances between consecutive points
-            distances = self.maritime_utils.calculate_distances(
-                vessel_data['lat'].values,
-                vessel_data['lon'].values
-            )
-            
-            # Calculate time differences
-            if 'timestamp' in vessel_data.columns:
-                time_diffs = vessel_data['timestamp'].diff().dt.total_seconds() / 3600  # hours
-                
-                # Calculate derived speed
-                derived_speeds = distances / time_diffs.fillna(1)  # km/h
-                derived_speeds = derived_speeds * 0.539957  # Convert to knots
-                
-                df.loc[vessel_idx, 'time_diff_hours'] = time_diffs
-                df.loc[vessel_idx, 'derived_speed_knots'] = derived_speeds
-            
-            df.loc[vessel_idx, 'distance_km'] = distances
-            
-            # Calculate course changes
-            if 'cog' in vessel_data.columns:
-                course_changes = vessel_data['cog'].diff()
-                # Handle wraparound (e.g., 359° to 1°)
-                course_changes = np.where(course_changes > 180, course_changes - 360, course_changes)
-                course_changes = np.where(course_changes < -180, course_changes + 360, course_changes)
-                df.loc[vessel_idx, 'course_change'] = course_changes
+        logger.info(f"Cleaned data: {len(df)}/{original_count} records retained")
         
         return df
     
-    def segment_trajectories(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Segment trajectories based on time gaps and other criteria.
-        
-        Args:
-            df: DataFrame with engineered features
-            
-        Returns:
-            DataFrame with trajectory segments
-        """
-        logger.info("Segmenting trajectories")
-        
-        df = df.copy()
-        df['segment_id'] = 0
-        
-        segment_counter = 0
-        
-        for mmsi, vessel_data in df.groupby('mmsi'):
-            vessel_idx = df['mmsi'] == mmsi
-            
-            # Find time gaps that exceed threshold
-            if 'time_diff_hours' in vessel_data.columns:
-                time_gaps = vessel_data['time_diff_hours'] > self.max_time_gap_hours
-                
-                # Create segment boundaries
-                segment_boundaries = time_gaps.cumsum()
-                
-                # Assign segment IDs
-                for segment_num in segment_boundaries.unique():
-                    segment_mask = (segment_boundaries == segment_num)
-                    segment_size = segment_mask.sum()
-                    
-                    # Only keep segments with minimum number of points
-                    if segment_size >= self.min_points_per_trajectory:
-                        df.loc[vessel_idx & segment_mask, 'segment_id'] = segment_counter
-                        segment_counter += 1
-                    else:
-                        # Mark small segments for removal
-                        df.loc[vessel_idx & segment_mask, 'segment_id'] = -1
-            else:
-                # If no timestamp, treat entire vessel track as one segment
-                if len(vessel_data) >= self.min_points_per_trajectory:
-                    df.loc[vessel_idx, 'segment_id'] = segment_counter
-                    segment_counter += 1
-                else:
-                    df.loc[vessel_idx, 'segment_id'] = -1
-        
-        # Remove segments marked for deletion
-        df = df[df['segment_id'] >= 0]
-        
-        logger.info(f"Created {segment_counter} trajectory segments")
-        return df
-    
-    def preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Complete preprocessing pipeline for AIS data.
-        
-        Args:
-            df: Raw AIS DataFrame
-            
-        Returns:
-            Preprocessed DataFrame ready for model training
-        """
-        logger.info("Starting AIS data preprocessing pipeline")
-        
-        # Clean data
-        df = self.clean_ais_data(df)
-        
-        # Engineer features
-        df = self.engineer_features(df)
-        
-        # Segment trajectories
-        df = self.segment_trajectories(df)
-        
-        logger.info("AIS data preprocessing completed")
-        return df
-    
-    def get_trajectory_sequences(self, 
-                               df: pd.DataFrame, 
-                               sequence_length: int = 20,
-                               prediction_horizon: int = 5) -> List[Dict]:
-        """
-        Extract trajectory sequences for model training.
-        
-        Args:
-            df: Preprocessed AIS DataFrame
-            sequence_length: Length of input sequences
-            prediction_horizon: Number of future points to predict
-            
-        Returns:
-            List of trajectory sequences
-        """
-        sequences = []
-        
-        for segment_id in df['segment_id'].unique():
-            segment_data = df[df['segment_id'] == segment_id].copy()
-            
-            if len(segment_data) < sequence_length + prediction_horizon:
-                continue
-            
-            # Extract sequences with sliding window
-            for i in range(len(segment_data) - sequence_length - prediction_horizon + 1):
-                input_seq = segment_data.iloc[i:i + sequence_length]
-                target_seq = segment_data.iloc[i + sequence_length:i + sequence_length + prediction_horizon]
-                
-                sequences.append({
-                    'input_sequence': input_seq,
-                    'target_sequence': target_seq,
-                    'mmsi': segment_data['mmsi'].iloc[0],
-                    'segment_id': segment_id
-                })
-        
-        logger.info(f"Extracted {len(sequences)} trajectory sequences")
-        return sequences
+    def get_statistics(self) -> Dict:
+        """Get processing statistics."""
+        return self.stats.copy()
+
+
+def load_ais_data(file_path: Union[str, Path]) -> pd.DataFrame:
+    """Load AIS data from file."""
+    processor = AISProcessor()
+    return processor.process_file(file_path)
+
+
+def preprocess_ais_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Preprocess AIS data."""
+    processor = AISProcessor()
+    return processor.clean_ais_data(df)
 

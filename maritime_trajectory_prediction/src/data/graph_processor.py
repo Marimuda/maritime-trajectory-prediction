@@ -169,7 +169,7 @@ class AISGraphProcessor(GraphProcessor):
                 source = waypoint_indices[i]
                 target = waypoint_indices[i + 1]
                 
-                if source \!= target:  # Avoid self-loops
+                if source != target:  # Avoid self-loops
                     if not G.has_edge(source, target):
                         G.add_edge(source, target, weight=1)
                     else:

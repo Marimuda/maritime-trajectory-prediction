@@ -1,0 +1,98 @@
+{
+  "anomaly_detection": {
+    "sota_anomaly_transformer": {
+      "inference_time": 0.15980982780456543,
+      "avg_anomaly_score": 5153.12646484375,
+      "detection_rate": 1.0
+    },
+    "baseline_autoencoder": {
+      "inference_time": 0.008784055709838867,
+      "avg_anomaly_score": 0.5000065565109253,
+      "detection_rate": 0.49969232082366943
+    }
+  },
+  "trajectory_prediction": {
+    "sota_motion_transformer": {
+      "ade": 63.98584747314453,
+      "fde": 63.71331024169922,
+      "inference_time": 0.32855725288391113,
+      "num_modes": 4,
+      "avg_confidence": 0.37524786591529846
+    },
+    "baseline_lstm": {
+      "ade": 62.356117248535156,
+      "fde": 62.35309982299805,
+      "inference_time": 0.030242919921875,
+      "num_modes": 1
+    }
+  },
+  "performance_comparison": {},
+  "computational_metrics": {
+    "anomaly_transformer_small": {
+      "parameters": 3195922,
+      "memory_mb": 0,
+      "inference_times": {
+        "1": 0.0052048683166503905,
+        "4": 0.007069253921508789,
+        "8": 0.011162066459655761,
+        "16": 0.018212103843688966,
+        "32": 0.04704296588897705
+      }
+    },
+    "anomaly_transformer_medium": {
+      "parameters": 19050516,
+      "memory_mb": 0,
+      "inference_times": {
+        "1": 0.026646900177001952,
+        "4": 0.033013653755187986,
+        "8": 0.0498619794845581,
+        "16": 0.09041879177093506,
+        "32": 0.20758612155914308
+      }
+    },
+    "motion_transformer_small": {
+      "parameters": 1206533,
+      "memory_mb": 0,
+      "inference_times": {
+        "1": 0.004294753074645996,
+        "4": 0.007014942169189453,
+        "8": 0.008747124671936035,
+        "16": 0.013289308547973633,
+        "32": 0.02366206645965576
+      }
+    },
+    "motion_transformer_medium": {
+      "parameters": 9542405,
+      "memory_mb": 0,
+      "inference_times": {
+        "1": 0.02449643611907959,
+        "4": 0.06664988994598389,
+        "8": 0.15172598361968995,
+        "16": 0.349586033821106,
+        "32": 0.6922271966934204
+      }
+    },
+    "baseline_autoencoder": {
+      "parameters": 41613,
+      "memory_mb": 0,
+      "inference_times": {
+        "1": 0.0003236532211303711,
+        "4": 0.00040938854217529295,
+        "8": 0.0005039453506469726,
+        "16": 0.0006047248840332031,
+        "32": 0.0008838415145874023
+      }
+    },
+    "baseline_lstm": {
+      "parameters": 838788,
+      "memory_mb": 0,
+      "inference_times": {
+        "1": 0.0020697832107543944,
+        "4": 0.002996683120727539,
+        "8": 0.00434119701385498,
+        "16": 0.0065755128860473635,
+        "32": 0.011728572845458984
+      }
+    }
+  }
+}

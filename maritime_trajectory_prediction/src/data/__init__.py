@@ -1,44 +1,54 @@
 """
-Data processing and loading modules for maritime trajectory prediction.
+Updated data module __init__.py with pipeline components.
 """
-
-# Core data processing - always available
 from .ais_processor import AISProcessor
+from .multi_task_processor import AISMultiTaskProcessor, MLTask
+from .pipeline import DataPipeline, BaseDatasetBuilder, DatasetConfig, DatasetMetadata, DatasetFormat
+from .builders import (
+    TrajectoryPredictionBuilder, 
+    AnomalyDetectionBuilder, 
+    GraphNetworkBuilder, 
+    CollisionAvoidanceBuilder
+)
+from .validation import DataValidator, QualityChecker, DatasetExporter, ValidationResult
 
-# Define public API
 __all__ = [
-    "AISProcessor",
-    "AISDataModule", 
-    "GraphProcessor",
+    # Core processors
+    'AISProcessor',
+    'AISMultiTaskProcessor',
+    'MLTask',
+    
+    # Pipeline components
+    'DataPipeline',
+    'BaseDatasetBuilder',
+    'DatasetConfig',
+    'DatasetMetadata',
+    'DatasetFormat',
+    
+    # Task-specific builders
+    'TrajectoryPredictionBuilder',
+    'AnomalyDetectionBuilder',
+    'GraphNetworkBuilder',
+    'CollisionAvoidanceBuilder',
+    
+    # Validation and quality
+    'DataValidator',
+    'QualityChecker',
+    'DatasetExporter',
+    'ValidationResult'
 ]
 
-# Lazy loading for potentially heavy modules
-import importlib
-import sys
-from types import ModuleType
-
-_lazy_modules = {
-    "AISDataModule": f"{__name__}.datamodule",
-    "GraphProcessor": f"{__name__}.graph_processor",
-}
-
-def __getattr__(name: str) -> ModuleType:
-    """Lazy loading of data modules."""
-    if name in _lazy_modules:
-        module_path = _lazy_modules[name]
-        module = importlib.import_module(module_path)
-        # Get the specific class from the module
-        attr = getattr(module, name)
-        setattr(sys.modules[__name__], name, attr)
-        return attr
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-def __dir__() -> list[str]:
-    """Return available attributes."""
-    return sorted(__all__)
-
-# Logging setup
-import logging
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
+# Lazy loading for heavy components
+def __getattr__(name):
+    if name == 'xarray_processor':
+        from .xarray_processor import AISDataProcessor
+        return AISDataProcessor
+    elif name == 'lightning_datamodule':
+        from .lightning_datamodule import AISLightningDataModule
+        return AISLightningDataModule
+    elif name == 'preprocess':
+        from .preprocess import preprocess_ais_logs
+        return preprocess_ais_logs
+    else:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

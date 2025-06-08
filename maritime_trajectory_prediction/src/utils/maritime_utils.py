@@ -1,260 +1,270 @@
 """
-Maritime utility functions for AIS data processing and analysis.
+Fixed maritime utilities with proper implementations.
 """
-
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Union, Optional
-import math
+from typing import Tuple, List, Union, Optional
 from geopy.distance import geodesic
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MaritimeUtils:
-    """
-    Utility class for maritime-specific calculations and operations.
-    """
+    """Maritime utility functions for AIS data processing."""
     
     @staticmethod
-    def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
-        Calculate the great circle distance between two points on Earth.
+        Calculate distance between two points using geodesic distance.
         
         Args:
-            lat1, lon1: Latitude and longitude of first point in decimal degrees
-            lat2, lon2: Latitude and longitude of second point in decimal degrees
+            lat1, lon1: First point coordinates
+            lat2, lon2: Second point coordinates
             
         Returns:
-            Distance in kilometers
+            Distance in nautical miles
         """
-        # Convert decimal degrees to radians
-        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-        
-        # Haversine formula
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-        c = 2 * math.asin(math.sqrt(a))
-        
-        # Radius of Earth in kilometers
-        r = 6371
-        
-        return c * r
-    
-    @staticmethod
-    def calculate_distances(lats: np.ndarray, lons: np.ndarray) -> np.ndarray:
-        """
-        Calculate distances between consecutive points in a trajectory.
-        
-        Args:
-            lats: Array of latitudes
-            lons: Array of longitudes
+        try:
+            # Handle NaN values
+            if any(pd.isna([lat1, lon1, lat2, lon2])):
+                return np.nan
             
-        Returns:
-            Array of distances in kilometers (first element is 0)
-        """
-        distances = np.zeros(len(lats))
-        
-        for i in range(1, len(lats)):
-            distances[i] = MaritimeUtils.haversine_distance(
-                lats[i-1], lons[i-1], lats[i], lons[i]
-            )
-        
-        return distances
+            # Calculate geodesic distance
+            point1 = (lat1, lon1)
+            point2 = (lat2, lon2)
+            distance_km = geodesic(point1, point2).kilometers
+            
+            # Convert to nautical miles
+            distance_nm = distance_km * 0.539957
+            
+            return distance_nm
+            
+        except Exception as e:
+            logger.warning(f"Error calculating distance: {e}")
+            return np.nan
     
     @staticmethod
     def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
-        Calculate the bearing between two points.
+        Calculate bearing between two points.
         
         Args:
-            lat1, lon1: Latitude and longitude of first point in decimal degrees
-            lat2, lon2: Latitude and longitude of second point in decimal degrees
+            lat1, lon1: First point coordinates
+            lat2, lon2: Second point coordinates
             
         Returns:
             Bearing in degrees (0-360)
         """
-        # Convert decimal degrees to radians
-        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-        
-        dlon = lon2 - lon1
-        
-        y = math.sin(dlon) * math.cos(lat2)
-        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
-        
-        bearing = math.atan2(y, x)
-        
-        # Convert to degrees and normalize to 0-360
-        bearing = math.degrees(bearing)
-        bearing = (bearing + 360) % 360
-        
-        return bearing
+        try:
+            # Handle NaN values
+            if any(pd.isna([lat1, lon1, lat2, lon2])):
+                return np.nan
+            
+            # Convert to radians
+            lat1_rad = np.radians(lat1)
+            lat2_rad = np.radians(lat2)
+            dlon_rad = np.radians(lon2 - lon1)
+            
+            # Calculate bearing
+            y = np.sin(dlon_rad) * np.cos(lat2_rad)
+            x = (np.cos(lat1_rad) * np.sin(lat2_rad) - 
+                 np.sin(lat1_rad) * np.cos(lat2_rad) * np.cos(dlon_rad))
+            
+            bearing_rad = np.arctan2(y, x)
+            bearing_deg = np.degrees(bearing_rad)
+            
+            # Normalize to 0-360
+            bearing_deg = (bearing_deg + 360) % 360
+            
+            return bearing_deg
+            
+        except Exception as e:
+            logger.warning(f"Error calculating bearing: {e}")
+            return np.nan
     
     @staticmethod
-    def calculate_speed(distance_km: float, time_hours: float) -> float:
+    def calculate_speed(distance_nm: float, time_diff_hours: float) -> float:
         """
         Calculate speed from distance and time.
         
         Args:
-            distance_km: Distance in kilometers
-            time_hours: Time in hours
+            distance_nm: Distance in nautical miles
+            time_diff_hours: Time difference in hours
             
         Returns:
             Speed in knots
         """
-        if time_hours <= 0:
-            return 0.0
-        
-        speed_kmh = distance_km / time_hours
-        speed_knots = speed_kmh * 0.539957  # Convert km/h to knots
-        
-        return speed_knots
+        try:
+            if pd.isna(distance_nm) or pd.isna(time_diff_hours) or time_diff_hours <= 0:
+                return np.nan
+            
+            speed_knots = distance_nm / time_diff_hours
+            
+            # Sanity check - reject unrealistic speeds
+            if speed_knots > 100:  # > 100 knots is unrealistic for most vessels
+                return np.nan
+            
+            return speed_knots
+            
+        except Exception as e:
+            logger.warning(f"Error calculating speed: {e}")
+            return np.nan
     
     @staticmethod
-    def normalize_course(course: float) -> float:
+    def is_in_port(lat: float, lon: float, port_coords: List[Tuple[float, float]], 
+                   radius_nm: float = 1.0) -> bool:
         """
-        Normalize course to 0-360 degrees.
+        Check if coordinates are within port area.
         
         Args:
-            course: Course in degrees
+            lat, lon: Point coordinates
+            port_coords: List of (lat, lon) tuples for port centers
+            radius_nm: Port radius in nautical miles
             
         Returns:
-            Normalized course (0-360 degrees)
+            True if within any port area
         """
-        return course % 360
+        try:
+            if pd.isna(lat) or pd.isna(lon):
+                return False
+            
+            for port_lat, port_lon in port_coords:
+                distance = MaritimeUtils.calculate_distance(lat, lon, port_lat, port_lon)
+                if not pd.isna(distance) and distance <= radius_nm:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking port proximity: {e}")
+            return False
     
     @staticmethod
-    def course_difference(course1: float, course2: float) -> float:
+    def classify_vessel_behavior(speeds: List[float], threshold_knots: float = 0.5) -> str:
         """
-        Calculate the difference between two courses, accounting for wraparound.
+        Classify vessel behavior based on speed patterns.
         
         Args:
-            course1: First course in degrees
-            course2: Second course in degrees
+            speeds: List of speed values in knots
+            threshold_knots: Speed threshold for stationary classification
             
         Returns:
-            Course difference in degrees (-180 to 180)
+            Behavior classification string
         """
-        diff = course2 - course1
-        
-        # Handle wraparound
-        if diff > 180:
-            diff -= 360
-        elif diff < -180:
-            diff += 360
+        try:
+            # Filter out NaN values
+            valid_speeds = [s for s in speeds if not pd.isna(s)]
             
-        return diff
+            if not valid_speeds:
+                return "unknown"
+            
+            avg_speed = np.mean(valid_speeds)
+            max_speed = np.max(valid_speeds)
+            
+            if avg_speed < threshold_knots:
+                return "anchored"
+            elif avg_speed < 3.0:
+                return "maneuvering"
+            elif avg_speed < 15.0:
+                return "transit"
+            else:
+                return "high_speed"
+                
+        except Exception as e:
+            logger.warning(f"Error classifying vessel behavior: {e}")
+            return "unknown"
     
     @staticmethod
-    def is_valid_position(lat: float, lon: float) -> bool:
+    def interpolate_position(lat1: float, lon1: float, time1: pd.Timestamp,
+                           lat2: float, lon2: float, time2: pd.Timestamp,
+                           target_time: pd.Timestamp) -> Tuple[float, float]:
         """
-        Check if a position is valid.
+        Interpolate position between two points at a target time.
         
         Args:
-            lat: Latitude in decimal degrees
-            lon: Longitude in decimal degrees
+            lat1, lon1, time1: First position and time
+            lat2, lon2, time2: Second position and time
+            target_time: Time for interpolation
             
         Returns:
-            True if position is valid
+            Interpolated (lat, lon) coordinates
         """
-        return (-90 <= lat <= 90) and (-180 <= lon <= 180)
+        try:
+            # Handle NaN values
+            if any(pd.isna([lat1, lon1, lat2, lon2])) or pd.isna(target_time):
+                return np.nan, np.nan
+            
+            # Check if target time is within bounds
+            if target_time < min(time1, time2) or target_time > max(time1, time2):
+                return np.nan, np.nan
+            
+            # Calculate time ratios
+            total_time = (time2 - time1).total_seconds()
+            if total_time == 0:
+                return lat1, lon1
+            
+            elapsed_time = (target_time - time1).total_seconds()
+            ratio = elapsed_time / total_time
+            
+            # Linear interpolation
+            lat_interp = lat1 + ratio * (lat2 - lat1)
+            lon_interp = lon1 + ratio * (lon2 - lon1)
+            
+            return lat_interp, lon_interp
+            
+        except Exception as e:
+            logger.warning(f"Error interpolating position: {e}")
+            return np.nan, np.nan
     
     @staticmethod
-    def is_valid_speed(speed_knots: float, max_speed: float = 50.0) -> bool:
+    def validate_trajectory(df: pd.DataFrame, max_speed_knots: float = 50.0) -> pd.DataFrame:
         """
-        Check if a speed is valid for a maritime vessel.
+        Validate and clean trajectory data.
         
         Args:
-            speed_knots: Speed in knots
-            max_speed: Maximum valid speed in knots
+            df: DataFrame with trajectory data
+            max_speed_knots: Maximum realistic speed in knots
             
         Returns:
-            True if speed is valid
+            Cleaned DataFrame
         """
-        return 0 <= speed_knots <= max_speed
-    
-    @staticmethod
-    def is_valid_course(course: float) -> bool:
-        """
-        Check if a course is valid.
-        
-        Args:
-            course: Course in degrees
+        try:
+            if df.empty or 'latitude' not in df.columns or 'longitude' not in df.columns:
+                return df
             
-        Returns:
-            True if course is valid
-        """
-        return 0 <= course <= 360
-    
-    @staticmethod
-    def interpolate_position(lat1: float, lon1: float, lat2: float, lon2: float, 
-                           fraction: float) -> Tuple[float, float]:
-        """
-        Interpolate position between two points.
-        
-        Args:
-            lat1, lon1: First position
-            lat2, lon2: Second position
-            fraction: Interpolation fraction (0-1)
+            # Sort by time if available
+            if 'time' in df.columns:
+                df = df.sort_values('time')
             
-        Returns:
-            Interpolated latitude and longitude
-        """
-        # Simple linear interpolation (for short distances)
-        lat = lat1 + fraction * (lat2 - lat1)
-        lon = lon1 + fraction * (lon2 - lon1)
-        
-        return lat, lon
-    
-    @staticmethod
-    def calculate_trajectory_features(trajectory: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calculate comprehensive features for a trajectory.
-        
-        Args:
-            trajectory: DataFrame with lat, lon, timestamp columns
-            
-        Returns:
-            DataFrame with additional feature columns
-        """
-        traj = trajectory.copy()
-        
-        # Calculate distances
-        distances = MaritimeUtils.calculate_distances(
-            traj['lat'].values, traj['lon'].values
-        )
-        traj['distance_km'] = distances
-        
-        # Calculate bearings
-        bearings = np.zeros(len(traj))
-        for i in range(1, len(traj)):
-            bearings[i] = MaritimeUtils.calculate_bearing(
-                traj.iloc[i-1]['lat'], traj.iloc[i-1]['lon'],
-                traj.iloc[i]['lat'], traj.iloc[i]['lon']
-            )
-        traj['bearing'] = bearings
-        
-        # Calculate speeds if timestamp is available
-        if 'timestamp' in traj.columns:
-            time_diffs = traj['timestamp'].diff().dt.total_seconds() / 3600  # hours
-            speeds = np.zeros(len(traj))
-            
-            for i in range(1, len(traj)):
-                if time_diffs.iloc[i] > 0:
-                    speeds[i] = MaritimeUtils.calculate_speed(
-                        distances[i], time_diffs.iloc[i]
+            # Calculate speeds between consecutive points
+            if len(df) > 1 and 'time' in df.columns:
+                speeds = []
+                for i in range(1, len(df)):
+                    prev_row = df.iloc[i-1]
+                    curr_row = df.iloc[i]
+                    
+                    distance = MaritimeUtils.calculate_distance(
+                        prev_row['latitude'], prev_row['longitude'],
+                        curr_row['latitude'], curr_row['longitude']
                     )
+                    
+                    time_diff = (curr_row['time'] - prev_row['time']).total_seconds() / 3600
+                    speed = MaritimeUtils.calculate_speed(distance, time_diff)
+                    speeds.append(speed)
+                
+                # Mark unrealistic speeds
+                speeds = [np.nan] + speeds  # First point has no previous speed
+                df['calculated_speed'] = speeds
+                
+                # Filter out points with unrealistic speeds
+                mask = (pd.isna(df['calculated_speed']) | 
+                       (df['calculated_speed'] <= max_speed_knots))
+                df = df[mask]
             
-            traj['calculated_speed_knots'] = speeds
-            traj['time_diff_hours'] = time_diffs
-        
-        # Calculate course changes
-        if len(traj) > 2:
-            course_changes = np.zeros(len(traj))
-            for i in range(2, len(traj)):
-                course_changes[i] = MaritimeUtils.course_difference(
-                    bearings[i-1], bearings[i]
-                )
-            traj['course_change'] = course_changes
-        
-        return traj
+            return df
+            
+        except Exception as e:
+            logger.error(f"Error validating trajectory: {e}")
+            return df
 
