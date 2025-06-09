@@ -284,9 +284,54 @@ class SOTATrainer:
     
     def _setup_data(self):
         """Setup data module."""
-        # Simplified data setup for now
-        logger.info("Data module setup - using simplified approach")
-        return None  # Will be implemented when data module imports are fixed
+        logger.info("Setting up data module for real AIS data")
+        
+        # Use the existing AIS data module
+        try:
+            # Try absolute import first
+            from maritime_trajectory_prediction.src.data.datamodule import AISDataModule
+        except ImportError:
+            # Fallback to relative import
+            import sys
+            import os
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+            from data.datamodule import AISDataModule
+        
+        data_dir = self.config.get('paths.data_dir', './data')
+        
+        # Find AIS data file in the data directory
+        data_path = None
+        import os
+        from pathlib import Path
+        
+        data_path_obj = Path(data_dir)
+        
+        # Look for common AIS data file patterns
+        for pattern in ['*.csv', '*.json', '*.parquet', '**/ais*.csv', '**/100k*']:
+            files = list(data_path_obj.glob(pattern))
+            if files:
+                data_path = str(files[0])
+                logger.info(f"Found AIS data file: {data_path}")
+                break
+        
+        if not data_path:
+            # Default to a specific path if no files found
+            data_path = os.path.join(data_dir, "raw", "100k_ais")
+            logger.info(f"Using default data path: {data_path}")
+        
+        batch_size = self.config.get('training.batch_size', 32)
+        sequence_length = self.config.get('data.sequence_length', 30)
+        prediction_horizon = self.config.get('data.prediction_horizon', 10)
+        
+        self.data_module = AISDataModule(
+            data_path=data_path,
+            batch_size=batch_size,
+            sequence_length=sequence_length,
+            prediction_horizon=prediction_horizon,
+            num_workers=self.config.get('data.num_workers', 4)
+        )
+        
+        return self.data_module
     
     def train(self):
         """Main training loop."""
@@ -369,27 +414,25 @@ class SOTATrainer:
         """Single training step."""
         model_type = self.config.get('model.type')
         
+        # Extract input and target from AIS datamodule format
+        input_data = batch['input'].to(self.device)  # [B, T, F]
+        target_data = batch['target'].to(self.device)  # [B, T_pred, F]
+        
         if model_type == 'anomaly_transformer':
-            # Anomaly transformer expects single input
-            context = batch['context'].to(self.device)
-            return self.trainer.train_step(context)
+            # Anomaly transformer expects single input for reconstruction
+            return self.trainer.train_step(input_data)
         
         elif model_type == 'motion_transformer':
             # Motion transformer expects context and targets
-            context = batch['context'].to(self.device)
-            targets = batch['targets'].to(self.device)
-            return self.trainer.train_step(context, targets)
+            return self.trainer.train_step(input_data, target_data)
         
         elif model_type == 'baseline':
             # Baseline models - delegate to trainer
             task = self.config.get('model.task')
             if task == 'anomaly_detection':
-                context = batch['context'].to(self.device)
-                return self.trainer.train_step(context)
+                return self.trainer.train_step(input_data)
             else:  # trajectory_prediction or vessel_interaction
-                context = batch['context'].to(self.device)
-                targets = batch['targets'].to(self.device)
-                return self.trainer.train_step(context, targets)
+                return self.trainer.train_step(input_data, target_data)
         
         else:
             raise ValueError(f"Unknown model type: {model_type}")
@@ -410,24 +453,22 @@ class SOTATrainer:
         """Single validation step."""
         model_type = self.config.get('model.type')
         
+        # Extract input and target from AIS datamodule format
+        input_data = batch['input'].to(self.device)  # [B, T, F]
+        target_data = batch['target'].to(self.device)  # [B, T_pred, F]
+        
         if model_type == 'anomaly_transformer':
-            context = batch['context'].to(self.device)
-            return self.trainer.validate_step(context)
+            return self.trainer.validate_step(input_data)
         
         elif model_type == 'motion_transformer':
-            context = batch['context'].to(self.device)
-            targets = batch['targets'].to(self.device)
-            return self.trainer.validate_step(context, targets)
+            return self.trainer.validate_step(input_data, target_data)
         
         elif model_type == 'baseline':
             task = self.config.get('model.task')
             if task == 'anomaly_detection':
-                context = batch['context'].to(self.device)
-                return self.trainer.validate_step(context)
+                return self.trainer.validate_step(input_data)
             else:
-                context = batch['context'].to(self.device)
-                targets = batch['targets'].to(self.device)
-                return self.trainer.validate_step(context, targets)
+                return self.trainer.validate_step(input_data, target_data)
         
         else:
             raise ValueError(f"Unknown model type: {model_type}")

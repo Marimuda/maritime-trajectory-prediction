@@ -471,9 +471,11 @@ class DatasetExporter:
                 X.reshape(X.shape[0], -1),
                 columns=[f'feature_{i}' for i in range(X.shape[1] * X.shape[2])]
             )
+            # Properly calculate target columns based on reshaped data
+            y_reshaped = y.reshape(y.shape[0], -1)
             target_df = pd.DataFrame(
-                y.reshape(y.shape[0], -1),
-                columns=[f'target_{i}' for i in range(y.shape[1] if len(y.shape) > 1 else 1)]
+                y_reshaped,
+                columns=[f'target_{i}' for i in range(y_reshaped.shape[1])]
             )
             
             # Export files

@@ -11,6 +11,7 @@ from src.data.maritime_message_processor import AISProcessor
 from src.utils.maritime_utils import MaritimeUtils
 
 
+@pytest.mark.integration
 class TestAISDataPipeline:
     """Integration tests for the complete AIS data processing pipeline."""
     
@@ -23,6 +24,7 @@ class TestAISDataPipeline:
 2025-05-08 11:10:20,135 - {"class":"AIS","device":"AIS-catcher","version":61,"driver":1,"hardware":"RTL2838UHIDIR","rxtime":"20250508101020","scaled":true,"channel":"A","nmea":["!AIVDM,1,1,,A,13mU<I001LORAmBSMBLPV@K60l19,0*18"],"signalpower":-32.539433,"ppm":-0.289352,"type":1,"repeat":0,"mmsi":257510500,"status":0,"status_text":"Under way using engine","turn_unscaled":0,"turn":0,"speed":9.200000,"accuracy":false,"lon":-6.492732,"lat":61.966694,"course":15.300000,"heading":13,"second":35,"maneuver":0,"raim":false,"radio":213065}
 2025-05-08 11:10:20,199 - [AIS engine v0.61 #0-0]                 received: 6 msgs, total: 2778 msgs, rate: 1.99595 msg/s"""
     
+    @pytest.mark.integration
     def test_end_to_end_processing(self, sample_log_content):
         """Test complete end-to-end processing pipeline."""
         # Create temporary log file
@@ -72,6 +74,7 @@ class TestAISDataPipeline:
         finally:
             Path(temp_path).unlink()
     
+    @pytest.mark.integration
     def test_vessel_trajectory_analysis(self, sample_log_content):
         """Test vessel trajectory analysis."""
         # Create temporary log file
@@ -105,6 +108,8 @@ class TestAISDataPipeline:
         finally:
             Path(temp_path).unlink()
     
+    @pytest.mark.integration
+    @pytest.mark.slow
     def test_real_data_processing(self):
         """Test processing with real log file if available."""
         log_path = Path("data/raw/log_snipit.log")

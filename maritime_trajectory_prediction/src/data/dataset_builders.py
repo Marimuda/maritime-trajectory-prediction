@@ -282,12 +282,19 @@ class AnomalyDetectionBuilder(BaseDatasetBuilder):
         
         for mmsi, vessel_df in df.groupby('mmsi'):
             if len(vessel_df) > 1:
-                distances = MaritimeUtils.calculate_distance_series(
-                    vessel_df['latitude'].values,
-                    vessel_df['longitude'].values
-                )
+                # Calculate distance between consecutive points
+                lats = vessel_df['latitude'].values
+                lons = vessel_df['longitude'].values
+                distances = []
+                for i in range(1, len(lats)):
+                    dist = MaritimeUtils.calculate_distance(
+                        lats[i-1], lons[i-1], lats[i], lons[i]
+                    )
+                    distances.append(dist)
                 # Assuming 1-minute intervals, 10 km jump is anomalous
-                vessel_anomalies = distances > 10.0
+                distances = np.array(distances)
+                vessel_anomalies = np.zeros(len(vessel_df), dtype=bool)
+                vessel_anomalies[1:] = distances > 10.0  # First point can't be anomalous
                 anomalies.loc[vessel_df.index] = vessel_anomalies
         
         return anomalies
