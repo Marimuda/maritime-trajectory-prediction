@@ -59,7 +59,7 @@ pytest --durations=10
 - Feature/target building
 - Dataset splitting
 
-### 🔄 **Integration Tests (5 tests)** - End-to-End  
+### 🔄 **Integration Tests (5 tests)** - End-to-End
 - Complete pipeline workflows
 - Export/import cycles
 - Multi-component interactions
@@ -80,7 +80,7 @@ pytest --durations=10
 # Fast feedback
 - pytest -m "unit and not slow"
 
-# Comprehensive validation  
+# Comprehensive validation
 - pytest -m "integration"
 - pytest -m "slow"
 
@@ -92,7 +92,7 @@ pytest --durations=10
 
 - **Total**: 37 tests
 - **Unit**: 28 tests (~76%)
-- **Integration**: 5 tests (~14%) 
+- **Integration**: 5 tests (~14%)
 - **Slow**: 9 tests (~24%)
 - **Pass Rate**: 100% ✅
 

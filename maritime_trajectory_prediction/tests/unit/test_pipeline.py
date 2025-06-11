@@ -87,8 +87,8 @@ class TestBaseDatasetBuilder:
                     {
                         "mmsi": mmsi,
                         "time": base_time + timedelta(minutes=i),
-                        "latitude": 62.0 + np.random.normal(0, 0.01),
-                        "longitude": -6.5 + np.random.normal(0, 0.01),
+                        "lat": 62.0 + np.random.normal(0, 0.01),
+                        "lon": -6.5 + np.random.normal(0, 0.01),
                         "sog": np.random.uniform(0, 20),
                         "cog": np.random.uniform(0, 360),
                         "heading": np.random.uniform(0, 360),
@@ -144,8 +144,8 @@ class TestBaseDatasetBuilder:
         filtered_df = builder.filter_data(sample_data)
 
         assert len(filtered_df) <= len(sample_data)
-        assert filtered_df["latitude"].min() >= 61.9
-        assert filtered_df["latitude"].max() <= 62.1
+        assert filtered_df["lat"].min() >= 61.9
+        assert filtered_df["lat"].max() <= 62.1
 
     @pytest.mark.unit
     def test_filter_data_temporal(self, sample_data, config):
@@ -225,8 +225,8 @@ class TestTrajectoryPredictionBuilder:
                 {
                     "mmsi": mmsi,
                     "time": base_time + timedelta(minutes=i),
-                    "latitude": 62.0 + i * 0.001,
-                    "longitude": -6.5 + i * 0.001,
+                    "lat": 62.0 + i * 0.001,
+                    "lon": -6.5 + i * 0.001,
                     "sog": 10 + np.random.normal(0, 1),
                     "cog": 45 + np.random.normal(0, 5),
                     "heading": 45 + np.random.normal(0, 5),
@@ -254,8 +254,8 @@ class TestTrajectoryPredictionBuilder:
         assert len(features_df) == len(sample_data)
         assert "mmsi" in features_df.columns
         assert "time" in features_df.columns
-        assert "latitude" in features_df.columns
-        assert "longitude" in features_df.columns
+        assert "lat" in features_df.columns
+        assert "lon" in features_df.columns
 
         # Check for derived features
         derived_cols = [
@@ -273,8 +273,8 @@ class TestTrajectoryPredictionBuilder:
         assert len(targets_df) == len(sample_data)
         assert "mmsi" in targets_df.columns
         assert "time" in targets_df.columns
-        assert "latitude" in targets_df.columns
-        assert "longitude" in targets_df.columns
+        assert "lat" in targets_df.columns
+        assert "lon" in targets_df.columns
 
     def test_create_sequences(self, sample_data, config):
         """Test sequence creation."""
@@ -335,8 +335,8 @@ class TestAnomalyDetectionBuilder:
                 {
                     "mmsi": mmsi,
                     "time": base_time + timedelta(minutes=i),
-                    "latitude": 62.0 + i * 0.001,
-                    "longitude": -6.5 + i * 0.001,
+                    "lat": 62.0 + i * 0.001,
+                    "lon": -6.5 + i * 0.001,
                     "sog": sog,
                     "cog": cog,
                     "heading": cog + np.random.normal(0, 2),
@@ -422,8 +422,8 @@ class TestDataValidator:
             {
                 "mmsi": [123456789, 987654321],
                 "time": [datetime(2024, 1, 1), datetime(2024, 1, 1, 0, 1)],
-                "latitude": [62.0, 62.1],
-                "longitude": [-6.5, -6.4],
+                "lat": [62.0, 62.1],
+                "lon": [-6.5, -6.4],
                 "sog": [10.0, 12.0],
                 "cog": [45.0, 50.0],
                 "heading": [45, 50],
@@ -438,8 +438,8 @@ class TestDataValidator:
             {
                 "mmsi": [123456789, 999999999],
                 "time": [datetime(2024, 1, 1), datetime(2024, 1, 1, 0, 1)],
-                "latitude": [95.0, 62.1],  # Invalid latitude
-                "longitude": [-6.5, -200.0],  # Invalid longitude
+                "lat": [95.0, 62.1],  # Invalid latitude
+                "lon": [-6.5, -200.0],  # Invalid longitude
                 "sog": [50.0, 12.0],  # Invalid speed
                 "cog": [400.0, 50.0],  # Invalid course
                 "heading": [45, 50],
@@ -469,7 +469,7 @@ class TestDataValidator:
 
         # Should detect coordinate errors
         coordinate_errors = [
-            err for err in result.errors if "latitude" in err or "longitude" in err
+            err for err in result.errors if "lat" in err or "lon" in err
         ]
         assert len(coordinate_errors) > 0
 
@@ -528,8 +528,8 @@ class TestQualityChecker:
                 {
                     "mmsi": 123456789,
                     "time": base_time + timedelta(minutes=i),
-                    "latitude": 62.0 + i * 0.001,
-                    "longitude": -6.5 + i * 0.001,
+                    "lat": 62.0 + i * 0.001,
+                    "lon": -6.5 + i * 0.001,
                     "sog": 10 + np.random.normal(0, 1),
                     "cog": 45 + np.random.normal(0, 2),
                     "accuracy": 1,
@@ -542,8 +542,8 @@ class TestQualityChecker:
                 {
                     "mmsi": 987654321,
                     "time": base_time + timedelta(minutes=i),
-                    "latitude": 61.0 + i * 0.001,
-                    "longitude": -7.0 + i * 0.001,
+                    "lat": 61.0 + i * 0.001,
+                    "lon": -7.0 + i * 0.001,
                     "sog": 15,
                     "cog": 90,
                     "accuracy": 2,
@@ -665,8 +665,8 @@ class TestDataPipeline:
                 "time": [
                     datetime(2024, 1, 1) + timedelta(minutes=i) for i in range(50)
                 ],
-                "latitude": [62.0 + i * 0.001 for i in range(50)],
-                "longitude": [-6.5 + i * 0.001 for i in range(50)],
+                "lat": [62.0 + i * 0.001 for i in range(50)],
+                "lon": [-6.5 + i * 0.001 for i in range(50)],
                 "sog": [10 + np.random.normal(0, 1) for _ in range(50)],
                 "cog": [45 + np.random.normal(0, 2) for _ in range(50)],
                 "heading": [45 + np.random.normal(0, 2) for _ in range(50)],
@@ -730,8 +730,8 @@ class TestDataPipeline:
                 "time": [
                     datetime(2024, 1, 1) + timedelta(minutes=i) for i in range(50)
                 ],
-                "latitude": [62.0 + i * 0.001 for i in range(50)],
-                "longitude": [-6.5 + i * 0.001 for i in range(50)],
+                "lat": [62.0 + i * 0.001 for i in range(50)],
+                "lon": [-6.5 + i * 0.001 for i in range(50)],
                 "sog": [10 + np.random.normal(0, 1) for _ in range(50)],
                 "cog": [45 + np.random.normal(0, 2) for _ in range(50)],
                 "heading": [45 + np.random.normal(0, 2) for _ in range(50)],
@@ -864,10 +864,10 @@ def real_ais_data():
                 {
                     "mmsi": vessel["mmsi"],
                     "time": base_time + time_offset,
-                    "latitude": vessel["start_lat"]
+                    "lat": vessel["start_lat"]
                     + lat_change
                     + np.random.normal(0, 0.001),
-                    "longitude": vessel["start_lon"]
+                    "lon": vessel["start_lon"]
                     + lon_change
                     + np.random.normal(0, 0.001),
                     "sog": vessel["speed"] + np.random.normal(0, 1),
