@@ -41,28 +41,31 @@ class MaritimeUtils:
                         lon1 = pd.Series([lon1])
                         lat2 = pd.Series([lat2])
                         lon2 = pd.Series([lon2])
-                
+
                 # Create DataFrame for easier vectorization
-                df = pd.DataFrame({
-                    'lat1': lat1, 'lon1': lon1, 
-                    'lat2': lat2, 'lon2': lon2
-                })
-                
+                df = pd.DataFrame(
+                    {"lat1": lat1, "lon1": lon1, "lat2": lat2, "lon2": lon2}
+                )
+
                 def calc_row_distance(row):
-                    if pd.isna(row['lat1']) or pd.isna(row['lon1']) or \
-                       pd.isna(row['lat2']) or pd.isna(row['lon2']):
+                    if (
+                        pd.isna(row["lat1"])
+                        or pd.isna(row["lon1"])
+                        or pd.isna(row["lat2"])
+                        or pd.isna(row["lon2"])
+                    ):
                         return np.nan
                     try:
-                        point1 = (row['lat1'], row['lon1'])
-                        point2 = (row['lat2'], row['lon2'])
+                        point1 = (row["lat1"], row["lon1"])
+                        point2 = (row["lat2"], row["lon2"])
                         distance_km = geodesic(point1, point2).kilometers
                         return distance_km * 0.539957  # Convert to nautical miles
                     except:
                         return np.nan
-                
+
                 result = df.apply(calc_row_distance, axis=1)
                 return result if len(result) > 1 else result.iloc[0]
-            
+
             # Handle scalar inputs
             else:
                 # Handle NaN values

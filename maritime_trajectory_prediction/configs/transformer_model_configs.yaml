@@ -11,7 +11,7 @@ anomaly_transformer:
       n_layers: 6
       dropout: 0.1
       max_seq_len: 200
-  
+
   training:
     batch_size: 32
     learning_rate: 1e-4
@@ -20,7 +20,7 @@ anomaly_transformer:
     patience: 15
     gradient_clip: 1.0
     validation_freq: 1
-  
+
   data:
     sequence_length: 50
     prediction_horizon: 10  # Not used for anomaly detection
@@ -29,14 +29,14 @@ anomaly_transformer:
     test_split: 0.1
     num_workers: 4
     pin_memory: true
-  
+
   logging:
     use_wandb: true
     project_name: "maritime-anomaly-detection"
     experiment_name: "anomaly_transformer_v1"
     log_freq: 10
     save_freq: 5
-  
+
   paths:
     data_dir: "./data/processed"
     output_dir: "./outputs/anomaly_transformer"
@@ -57,7 +57,7 @@ motion_transformer:
       decoder_layers: 6
       n_heads: 8
       prediction_horizon: 30
-  
+
   training:
     batch_size: 16  # Smaller batch size due to larger model
     learning_rate: 1e-4
@@ -67,7 +67,7 @@ motion_transformer:
     gradient_clip: 1.0
     loss_type: "best_of_n"  # or "weighted"
     validation_freq: 1
-  
+
   data:
     sequence_length: 30
     prediction_horizon: 30
@@ -76,14 +76,14 @@ motion_transformer:
     test_split: 0.1
     num_workers: 4
     pin_memory: true
-  
+
   logging:
     use_wandb: true
     project_name: "maritime-trajectory-prediction"
     experiment_name: "motion_transformer_v1"
     log_freq: 10
     save_freq: 5
-  
+
   paths:
     data_dir: "./data/processed"
     output_dir: "./outputs/motion_transformer"
@@ -98,13 +98,13 @@ baseline_trajectory:
     type: "baseline"
     task: "trajectory_prediction"
     custom_params:
-      input_dim: 13
+      input_dim: 4
       hidden_dim: 128
       num_layers: 2
       output_dim: 4
       dropout: 0.2
       bidirectional: true
-  
+
   training:
     batch_size: 64
     learning_rate: 1e-3
@@ -113,7 +113,7 @@ baseline_trajectory:
     patience: 10
     gradient_clip: 1.0
     validation_freq: 1
-  
+
   data:
     sequence_length: 20
     prediction_horizon: 10
@@ -122,14 +122,14 @@ baseline_trajectory:
     test_split: 0.1
     num_workers: 4
     pin_memory: true
-  
+
   logging:
     use_wandb: false
     project_name: "maritime-baselines"
     experiment_name: "lstm_baseline_v1"
     log_freq: 20
     save_freq: 10
-  
+
   paths:
     data_dir: "./data/processed"
     output_dir: "./outputs/baseline_trajectory"
@@ -144,12 +144,12 @@ baseline_anomaly:
     type: "baseline"
     task: "anomaly_detection"
     custom_params:
-      input_dim: 13
+      input_dim: 4
       encoding_dim: 64
       hidden_dims: [128, 96]
       activation: "relu"
       dropout: 0.2
-  
+
   training:
     batch_size: 64
     learning_rate: 1e-3
@@ -158,7 +158,7 @@ baseline_anomaly:
     patience: 10
     gradient_clip: 1.0
     validation_freq: 1
-  
+
   data:
     sequence_length: 30
     prediction_horizon: 10  # Not used for anomaly detection
@@ -167,14 +167,14 @@ baseline_anomaly:
     test_split: 0.1
     num_workers: 4
     pin_memory: true
-  
+
   logging:
     use_wandb: false
     project_name: "maritime-baselines"
     experiment_name: "autoencoder_baseline_v1"
     log_freq: 20
     save_freq: 10
-  
+
   paths:
     data_dir: "./data/processed"
     output_dir: "./outputs/baseline_anomaly"
@@ -188,7 +188,7 @@ test_config:
   model:
     type: "motion_transformer"
     size: "small"
-  
+
   training:
     batch_size: 8
     learning_rate: 1e-3
@@ -197,7 +197,7 @@ test_config:
     patience: 3
     gradient_clip: 1.0
     validation_freq: 1
-  
+
   data:
     sequence_length: 15
     prediction_horizon: 10
@@ -206,17 +206,16 @@ test_config:
     test_split: 0.1
     num_workers: 2
     pin_memory: false
-  
+
   logging:
     use_wandb: false
     project_name: "maritime-test"
     experiment_name: "quick_test"
     log_freq: 1
     save_freq: 1
-  
+
   paths:
     data_dir: "./data/test"
     output_dir: "./outputs/test"
     checkpoint_dir: "./checkpoints/test"
     log_dir: "./logs/test"
-

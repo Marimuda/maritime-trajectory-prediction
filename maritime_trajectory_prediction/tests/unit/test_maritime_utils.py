@@ -302,3 +302,42 @@ class TestMaritimeUtils:
 
         assert len(validated_df) == len(df)  # Should return unchanged
         assert "calculated_speed" not in validated_df.columns
+
+    def test_calculate_distance_with_series(self):
+        """Test distance calculation with pandas Series inputs."""
+        # Create test data
+        df = pd.DataFrame({"lat": [62.0, 62.1, 62.2], "lon": [-6.7, -6.8, -6.9]})
+
+        center_lat = 62.05
+        center_lon = -6.75
+
+        # This should handle Series inputs without error
+        distances = MaritimeUtils.calculate_distance(
+            df["lat"], df["lon"], center_lat, center_lon
+        )
+
+        assert isinstance(distances, pd.Series)
+        assert len(distances) == 3
+        assert all(d > 0 for d in distances if not pd.isna(d))
+
+    def test_calculate_distance_series_with_nan(self):
+        """Test distance calculation with NaN values in Series."""
+        lats = pd.Series([62.0, np.nan, 62.2])
+        lons = pd.Series([-6.7, -6.8, np.nan])
+
+        distances = MaritimeUtils.calculate_distance(lats, lons, 62.0, -6.7)
+
+        assert isinstance(distances, pd.Series)
+        assert pd.isna(distances.iloc[1])  # NaN lat should result in NaN
+        assert pd.isna(distances.iloc[2])  # NaN lon should result in NaN
+        assert not pd.isna(distances.iloc[0])  # Valid values should work
+
+    def test_calculate_distance_mixed_inputs(self):
+        """Test distance calculation with mixed scalar and Series inputs."""
+        lats = pd.Series([62.0, 62.1])
+        lons = pd.Series([-6.7, -6.8])
+
+        # Series to scalar
+        distances = MaritimeUtils.calculate_distance(lats, lons, 62.05, -6.75)
+        assert isinstance(distances, pd.Series)
+        assert len(distances) == 2

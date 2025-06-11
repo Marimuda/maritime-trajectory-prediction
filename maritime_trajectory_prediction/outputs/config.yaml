@@ -23,11 +23,11 @@ paths:
   log_dir: ./logs
   output_dir: ./outputs
 training:
-  batch_size: 32
+  batch_size: 2
   gradient_clip: 1.0
   learning_rate: 0.0001
   loss_type: best_of_n
-  max_epochs: 50
+  max_epochs: 2
   patience: 10
   validation_freq: 1
   weight_decay: 1.0e-05
