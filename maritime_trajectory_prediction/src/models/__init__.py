@@ -113,7 +113,7 @@ METRICS_REGISTRY = {
 # Default configurations for each model
 DEFAULT_CONFIGS = {
     'trajectory_prediction': {
-        'input_dim': 13,
+        'input_dim': 4,
         'hidden_dim': 128,
         'num_layers': 2,
         'output_dim': 4,
@@ -121,7 +121,7 @@ DEFAULT_CONFIGS = {
         'dropout': 0.2
     },
     'anomaly_detection': {
-        'input_dim': 13,
+        'input_dim': 4,
         'encoding_dim': 64,
         'hidden_dims': [128, 96],
         'activation': 'relu',
@@ -136,7 +136,7 @@ DEFAULT_CONFIGS = {
         'aggregation': 'mean'
     },
     'anomaly_transformer': {
-        'input_dim': 13,
+        'input_dim': 4,
         'd_model': 512,
         'n_heads': 8,
         'n_layers': 6,
@@ -145,7 +145,7 @@ DEFAULT_CONFIGS = {
         'max_seq_len': 200
     },
     'motion_transformer': {
-        'input_dim': 13,
+        'input_dim': 4,
         'd_model': 256,
         'n_queries': 6,
         'encoder_layers': 4,

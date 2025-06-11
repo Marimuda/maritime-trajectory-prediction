@@ -147,6 +147,9 @@ class AISDataModule(pl.LightningDataModule):
         actual_features = [
             col for col in features_df.columns if col not in ["mmsi", "time"]
         ]
+        
+        # Store input dimension for model configuration
+        self.input_dim = len(actual_features)
         target_features = FeatureGroups.BASIC_TRAJECTORY  # y has 4 features
 
         # Convert to list of sequence dictionaries for the dataset

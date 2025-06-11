@@ -16,6 +16,7 @@ import torch
 import wandb
 import yaml
 from torch import nn
+from tqdm import tqdm
 
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
@@ -233,10 +234,19 @@ class SOTATrainer:
                 size = self.config.get("model.size", "medium")
                 model = create_maritime_anomaly_transformer(size)
             else:  # motion_transformer
-                from models.motion_transformer import create_maritime_motion_transformer
+                from models.motion_transformer import create_motion_transformer, MARITIME_MTR_CONFIG
 
                 size = self.config.get("model.size", "medium")
-                model = create_maritime_motion_transformer(size)
+                config = MARITIME_MTR_CONFIG[size].copy()
+                
+                # Override with training configuration parameters
+                config['prediction_horizon'] = self.config.get("data.prediction_horizon", 10)
+                
+                # Get input dimension from data if available
+                if hasattr(self, 'data_module') and hasattr(self.data_module, 'input_dim'):
+                    config['input_dim'] = self.data_module.input_dim
+                
+                model = create_motion_transformer(**config)
 
             # Apply custom parameters if provided
             if custom_params:
@@ -372,10 +382,20 @@ class SOTATrainer:
             self.model.train()
             train_losses = []
 
-            for batch_idx, batch in enumerate(train_loader):
+            # Add progress bar for training
+            train_pbar = tqdm(enumerate(train_loader), total=len(train_loader), 
+                            desc=f"Epoch {epoch}/{max_epochs}", leave=False)
+            
+            for batch_idx, batch in train_pbar:
                 # Handle different batch formats for different models
                 loss_dict = self._train_step(batch)
                 train_losses.append(loss_dict["total_loss"])
+                
+                # Update progress bar
+                train_pbar.set_postfix({
+                    'loss': f"{loss_dict['total_loss']:.4f}",
+                    'avg_loss': f"{sum(train_losses)/len(train_losses):.4f}"
+                })
 
                 # Logging
                 if batch_idx % log_freq == 0:
@@ -470,11 +490,17 @@ class SOTATrainer:
         val_losses = []
 
         with torch.no_grad():
-            for batch in val_loader:
+            val_pbar = tqdm(val_loader, desc="Validation", leave=False)
+            for batch in val_pbar:
                 loss_dict = self._validation_step(batch)
-                val_losses.append(
-                    loss_dict.get("total_loss", loss_dict.get("val_total_loss", 0))
-                )
+                val_loss = loss_dict.get("total_loss", loss_dict.get("val_total_loss", 0))
+                val_losses.append(val_loss)
+                
+                # Update progress bar
+                val_pbar.set_postfix({
+                    'val_loss': f"{val_loss:.4f}",
+                    'avg_val_loss': f"{sum(val_losses)/len(val_losses):.4f}"
+                })
 
         return sum(val_losses) / len(val_losses)
 

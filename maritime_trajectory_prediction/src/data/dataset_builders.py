@@ -124,7 +124,7 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
         # Distance traveled
         if all(col in df.columns for col in ["lat", "lon"]):
             df["movement_distance"] = 0.0
-            for mmsi, vessel_df in df.groupby("mmsi"):
+            for _, vessel_df in df.groupby("mmsi"):
                 if len(vessel_df) > 1:
                     # Calculate distances between consecutive points
                     distances = []
@@ -334,7 +334,7 @@ class AnomalyDetectionBuilder(BaseDatasetBuilder):
         # Anomaly: position jumps > 10 km in one time step
         anomalies = pd.Series(False, index=df.index)
 
-        for mmsi, vessel_df in df.groupby("mmsi"):
+        for _, vessel_df in df.groupby("mmsi"):
             if len(vessel_df) > 1:
                 # Calculate distance between consecutive points
                 lats = vessel_df["lat"].values

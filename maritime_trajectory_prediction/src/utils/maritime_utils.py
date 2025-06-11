@@ -15,31 +15,69 @@ class MaritimeUtils:
     """Maritime utility functions for AIS data processing."""
 
     @staticmethod
-    def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    def calculate_distance(lat1, lon1, lat2, lon2):
         """
         Calculate distance between two points using geodesic distance.
+        Handles both scalar and Series inputs.
 
         Args:
-            lat1, lon1: First point coordinates
-            lat2, lon2: Second point coordinates
+            lat1, lon1: First point coordinates (scalar or Series)
+            lat2, lon2: Second point coordinates (scalar or Series)
 
         Returns:
-            Distance in nautical miles
+            Distance in nautical miles (scalar or Series)
         """
         try:
-            # Handle NaN values
-            if any(pd.isna([lat1, lon1, lat2, lon2])):
-                return np.nan
+            # Check if any input is a Series
+            if any(isinstance(x, pd.Series) for x in [lat1, lon1, lat2, lon2]):
+                # Convert all to Series for vectorized operation
+                if not isinstance(lat1, pd.Series):
+                    # If lat2/lon2 are Series, create Series of same length
+                    if isinstance(lat2, pd.Series):
+                        lat1 = pd.Series([lat1] * len(lat2), index=lat2.index)
+                        lon1 = pd.Series([lon1] * len(lat2), index=lat2.index)
+                    else:
+                        lat1 = pd.Series([lat1])
+                        lon1 = pd.Series([lon1])
+                        lat2 = pd.Series([lat2])
+                        lon2 = pd.Series([lon2])
+                
+                # Create DataFrame for easier vectorization
+                df = pd.DataFrame({
+                    'lat1': lat1, 'lon1': lon1, 
+                    'lat2': lat2, 'lon2': lon2
+                })
+                
+                def calc_row_distance(row):
+                    if pd.isna(row['lat1']) or pd.isna(row['lon1']) or \
+                       pd.isna(row['lat2']) or pd.isna(row['lon2']):
+                        return np.nan
+                    try:
+                        point1 = (row['lat1'], row['lon1'])
+                        point2 = (row['lat2'], row['lon2'])
+                        distance_km = geodesic(point1, point2).kilometers
+                        return distance_km * 0.539957  # Convert to nautical miles
+                    except:
+                        return np.nan
+                
+                result = df.apply(calc_row_distance, axis=1)
+                return result if len(result) > 1 else result.iloc[0]
+            
+            # Handle scalar inputs
+            else:
+                # Handle NaN values
+                if any(pd.isna([lat1, lon1, lat2, lon2])):
+                    return np.nan
 
-            # Calculate geodesic distance
-            point1 = (lat1, lon1)
-            point2 = (lat2, lon2)
-            distance_km = geodesic(point1, point2).kilometers
+                # Calculate geodesic distance
+                point1 = (lat1, lon1)
+                point2 = (lat2, lon2)
+                distance_km = geodesic(point1, point2).kilometers
 
-            # Convert to nautical miles
-            distance_nm = distance_km * 0.539957
+                # Convert to nautical miles
+                distance_nm = distance_km * 0.539957
 
-            return distance_nm
+                return distance_nm
 
         except Exception as e:
             logger.warning(f"Error calculating distance: {e}")

@@ -642,7 +642,7 @@ def create_motion_transformer(
 # Maritime-specific configurations
 MARITIME_MTR_CONFIG = {
     'small': {
-        'input_dim': 13,
+        'input_dim': 4,
         'd_model': 128,
         'n_queries': 4,
         'encoder_layers': 2,
@@ -654,7 +654,7 @@ MARITIME_MTR_CONFIG = {
         'output_dim': 4
     },
     'medium': {
-        'input_dim': 13,
+        'input_dim': 4,
         'd_model': 256,
         'n_queries': 6,
         'encoder_layers': 4,
@@ -666,7 +666,7 @@ MARITIME_MTR_CONFIG = {
         'output_dim': 4
     },
     'large': {
-        'input_dim': 13,
+        'input_dim': 4,
         'd_model': 512,
         'n_queries': 8,
         'encoder_layers': 6,
