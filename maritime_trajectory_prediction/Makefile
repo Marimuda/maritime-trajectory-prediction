@@ -195,7 +195,7 @@ train-wandb: ## Train: Train with Weights & Biases logging
 
 train-sweep: ## Train: Run hyperparameter sweep
 	@echo "$(BLUE)Running hyperparameter sweep...$(NC)"
-	$(PYTHON) scripts/run_experiments.sh
+	./scripts/run_experiments.sh
 
 # Build targets
 build: clean check test-fast train ## Build: Complete build pipeline

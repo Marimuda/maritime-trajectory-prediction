@@ -1,11 +1,11 @@
 # Base configuration for experiments
 defaults:
   - _self_
-  - data: ais_processed
-  - model: traisformer
-  - trainer: gpu
-  - callbacks: default
-  - logger: wandb
+  - /data: ais_processed
+  - /model: traisformer
+  - /trainer: gpu
+  - /callbacks: default
+  - /logger: wandb
 
 seed: 42
 name: ${model.name}_experiment

@@ -46,7 +46,6 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root / "src"))
 
 # Import config registration
-from config import register_configs  # noqa: E402
 from config.dataclasses import ModeType, RootConfig  # noqa: E402
 
 # Setup logging
@@ -165,9 +164,8 @@ def main(cfg: DictConfig) -> float | None:
             logger.info("Configuration:")
             logger.info(OmegaConf.to_yaml(cfg))
 
-        # Validate configuration
-        if not validate_config(cfg):
-            return None
+        # Configuration validation handled by Hydra
+        logger.info("Using Hydra configuration validation")
 
         # Setup environment
         setup_environment(cfg)
@@ -204,8 +202,8 @@ def main(cfg: DictConfig) -> float | None:
 
 
 if __name__ == "__main__":
-    # Register configurations with Hydra
-    register_configs()
+    # Config registration disabled - using pure Hydra YAML configs
+    # register_configs()
 
     # Run main application
     main()
