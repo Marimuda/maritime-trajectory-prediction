@@ -1,6 +1,7 @@
 # Global configuration for maritime trajectory prediction
 defaults:
   - _self_
+  - mode: train  # Default mode
   - data: ais_processed
   - model: traisformer
   - trainer: gpu

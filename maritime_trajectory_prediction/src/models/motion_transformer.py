@@ -577,6 +577,7 @@ class MotionTransformerTrainer:
         weight_decay: float = 1e-5,
         loss_type: str = "best_of_n",
         device: str = "cpu",
+        total_steps: int = None,
     ):
         """
         Initialize trainer.
@@ -587,6 +588,7 @@ class MotionTransformerTrainer:
             weight_decay: Weight decay
             loss_type: Type of loss function
             device: Device to use
+            total_steps: Total training steps for scheduler (if None, scheduler will be initialized later)
         """
         self.model = model.to(device)
         self.device = device
@@ -597,14 +599,34 @@ class MotionTransformerTrainer:
             model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
 
-        # Learning rate scheduler
-        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            self.optimizer,
-            max_lr=learning_rate,
-            total_steps=1000,  # Will be updated based on actual training steps
-            pct_start=0.1,
-            anneal_strategy="cos",
-        )
+        # Learning rate scheduler - will be initialized later if total_steps not provided
+        self.scheduler = None
+        if total_steps is not None:
+            self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                self.optimizer,
+                max_lr=learning_rate,
+                total_steps=total_steps,
+                pct_start=0.1,
+                anneal_strategy="cos",
+            )
+
+        self.learning_rate = learning_rate
+
+    def setup_scheduler(self, total_steps: int):
+        """
+        Initialize the learning rate scheduler with the actual total steps.
+
+        Args:
+            total_steps: Total number of training steps
+        """
+        if self.scheduler is None:
+            self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                self.optimizer,
+                max_lr=self.learning_rate,
+                total_steps=total_steps,
+                pct_start=0.1,
+                anneal_strategy="cos",
+            )
 
     def train_step(
         self, context: torch.Tensor, targets: torch.Tensor
@@ -632,7 +654,8 @@ class MotionTransformerTrainer:
         loss_dict["total_loss"].backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
-        self.scheduler.step()
+        if self.scheduler is not None:
+            self.scheduler.step()
 
         # Convert to float for logging
         return {

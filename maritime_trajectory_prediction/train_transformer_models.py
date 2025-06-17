@@ -294,6 +294,7 @@ class SOTATrainer:
                 weight_decay=weight_decay,
                 loss_type=loss_type,
                 device=self.device,
+                total_steps=None,  # Will be set up later when we know the data size
             )
 
         elif model_type == "baseline":
@@ -384,6 +385,15 @@ class SOTATrainer:
             f"Training batches: {len(train_loader)}, Validation batches: {len(val_loader)}"
         )
 
+        # Setup scheduler for motion transformer if needed
+        model_type = self.config.get("model.type")
+        if model_type == "motion_transformer" and hasattr(
+            self.trainer, "setup_scheduler"
+        ):
+            total_steps = len(train_loader) * max_epochs
+            self.trainer.setup_scheduler(total_steps)
+            logger.info(f"Initialized scheduler with {total_steps} total steps")
+
         for epoch in range(max_epochs):
             # Training phase
             self.model.train()
@@ -391,29 +401,33 @@ class SOTATrainer:
 
             # Add progress bar for training
             train_pbar = tqdm(
-                enumerate(train_loader),
-                total=len(train_loader),
-                desc=f"Epoch {epoch}/{max_epochs}",
+                train_loader,
+                desc=f"Epoch {epoch+1}/{max_epochs}",
                 leave=False,
+                ncols=100,
+                dynamic_ncols=True,
             )
 
-            for batch_idx, batch in train_pbar:
+            for batch_idx, batch in enumerate(train_pbar):
                 # Handle different batch formats for different models
                 loss_dict = self._train_step(batch)
                 train_losses.append(loss_dict["total_loss"])
 
-                # Update progress bar
-                train_pbar.set_postfix(
-                    {
-                        "loss": f"{loss_dict['total_loss']:.4f}",
-                        "avg_loss": f"{sum(train_losses)/len(train_losses):.4f}",
-                    }
-                )
+                # Update progress bar (less frequently to avoid clutter)
+                if batch_idx % 5 == 0 or batch_idx == len(train_loader) - 1:
+                    train_pbar.set_postfix(
+                        {
+                            "loss": f"{loss_dict['total_loss']:.4f}",
+                            "avg": f"{sum(train_losses)/len(train_losses):.4f}",
+                        }
+                    )
 
-                # Logging
-                if batch_idx % log_freq == 0:
+                # Logging - reduce frequency to avoid spam
+                if (
+                    batch_idx % (log_freq * 5) == 0
+                ):  # Log every 50 batches instead of every 10
                     logger.info(
-                        f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss_dict['total_loss']:.4f}"
+                        f"Epoch {epoch+1}, Batch {batch_idx}, Loss: {loss_dict['total_loss']:.4f}"
                     )
 
                     if self.config.get("logging.use_wandb"):
@@ -437,7 +451,7 @@ class SOTATrainer:
                 val_loss = self._validate(val_loader)
 
                 logger.info(
-                    f"Epoch {epoch}: Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}"
+                    f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.4f}, Val Loss: {val_loss:.4f}"
                 )
 
                 if self.config.get("logging.use_wandb"):
@@ -458,7 +472,7 @@ class SOTATrainer:
                     patience_counter += 1
 
                 if patience_counter >= patience:
-                    logger.info(f"Early stopping at epoch {epoch}")
+                    logger.info(f"Early stopping at epoch {epoch+1}")
                     break
 
             # Regular checkpoint saving
@@ -503,21 +517,22 @@ class SOTATrainer:
         val_losses = []
 
         with torch.no_grad():
-            val_pbar = tqdm(val_loader, desc="Validation", leave=False)
-            for batch in val_pbar:
+            val_pbar = tqdm(val_loader, desc="Validation", leave=False, ncols=80)
+            for batch_idx, batch in enumerate(val_pbar):
                 loss_dict = self._validation_step(batch)
                 val_loss = loss_dict.get(
                     "total_loss", loss_dict.get("val_total_loss", 0)
                 )
                 val_losses.append(val_loss)
 
-                # Update progress bar
-                val_pbar.set_postfix(
-                    {
-                        "val_loss": f"{val_loss:.4f}",
-                        "avg_val_loss": f"{sum(val_losses)/len(val_losses):.4f}",
-                    }
-                )
+                # Update progress bar less frequently
+                if batch_idx % 5 == 0 or batch_idx == len(val_loader) - 1:
+                    val_pbar.set_postfix(
+                        {
+                            "loss": f"{val_loss:.4f}",
+                            "avg": f"{sum(val_losses)/len(val_losses):.4f}",
+                        }
+                    )
 
         return sum(val_losses) / len(val_losses)
 

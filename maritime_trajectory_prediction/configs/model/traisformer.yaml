@@ -1,7 +1,13 @@
 # Configuration for TrAISformer model
-_target_: src.models.traisformer.TrAISformer
+
+# Model metadata
+name: traisformer
+type: TRAISFORMER
+task: trajectory_prediction
+checkpoint_path: null  # Set at runtime
 
 # Model architecture
+_target_: src.models.traisformer.TrAISformer
 d_model: 768
 nhead: 8
 num_layers: 8
@@ -14,8 +20,10 @@ lon_bins: 270
 sog_bins: 30
 cog_bins: 72
 
-# Training parameters
-max_epochs: 100
-optimizer:
-  lr: 1e-4
-  weight_decay: 0.01
+# Model-specific features
+input_dim: 4  # lat, lon, sog, cog
+output_dim: 4
+sequence_length: 30
+prediction_horizon: 12
+supports_anomaly_detection: false
+supports_uncertainty: true

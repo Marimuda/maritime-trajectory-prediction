@@ -1,0 +1,14 @@
+# @package _global_
+# Configuration for training mode
+
+mode: train
+
+# Training specific settings
+train:
+  auto_tune: false
+  compile_model: false
+  resume_from_checkpoint: null
+  validate_every_n_epochs: 1
+  save_predictions: false
+  log_hyperparameters: true
+  profiler: null  # Options: null, simple, advanced, pytorch
