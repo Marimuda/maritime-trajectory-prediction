@@ -1,0 +1,185 @@
+seed: 42
+data_dir: ${oc.env:MARITIME_DATA_DIR,data}
+output_dir: ${oc.env:MARITIME_OUTPUT_DIR,outputs}
+name: ${model.name}_experiment
+wandb_project: maritime_trajectory_prediction
+mode: train
+train:
+  auto_tune: false
+  compile_model: false
+  resume_from_checkpoint: null
+  validate_every_n_epochs: 1
+  save_predictions: false
+  log_hyperparameters: true
+  profiler: null
+data:
+  _target_: src.data.datamodule.AISFuserDataModule
+  processed_dir: ${data_dir}/processed
+  raw_dir: ${data_dir}/raw
+  batch_size: 128
+  num_workers: 8
+  pin_memory: true
+  sequence_length: 30
+  prediction_horizon: 12
+  validation_split: 0.2
+  test_split: 0.1
+  feature_columns:
+  - latitude
+  - longitude
+  - sog
+  - cog
+  target_columns:
+  - latitude
+  - longitude
+  - sog
+  - cog
+  normalize_features: true
+  filter_outliers: true
+  min_trajectory_length: 50
+model:
+  name: traisformer
+  type: TRAISFORMER
+  task: trajectory_prediction
+  checkpoint_path: null
+  _target_: src.models.traisformer.TrAISformer
+  d_model: 768
+  nhead: 8
+  num_layers: 8
+  dim_feedforward: 2048
+  dropout: 0.1
+  lat_bins: 250
+  lon_bins: 270
+  sog_bins: 30
+  cog_bins: 72
+  input_dim: 4
+  output_dim: 4
+  sequence_length: 30
+  prediction_horizon: 12
+  supports_anomaly_detection: false
+  supports_uncertainty: true
+trainer:
+  accelerator: gpu
+  devices: 1
+  precision: 16-mixed
+  max_epochs: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  optimizer: adam
+  scheduler: null
+  check_val_every_n_epoch: 1
+  val_check_interval: null
+  log_every_n_steps: 50
+  gradient_clip_val: 1.0
+  benchmark: true
+  compile: false
+  deterministic: false
+callbacks:
+  early_stopping: true
+  monitor: val/loss
+  patience: 15
+  mode: min
+  checkpoint_dir: ${output_dir}/checkpoints
+  save_top_k: 3
+  save_last: true
+  lr_logging_interval: epoch
+  device_stats: true
+  rich_progress: true
+logger:
+  type: wandb
+  name: ${name}
+  save_dir: ${output_dir}/logs
+  version: null
+  wandb_project: ${wandb_project}
+  wandb_tags:
+  - ${model.type}
+  - ${mode}
+  offline: false
+  log_model: true
+experiment:
+  seed: 42
+  name: ${model.name}_experiment
+  data_dir: data/
+  output_dir: outputs/${name}/
+  data:
+    _target_: src.data.datamodule.AISFuserDataModule
+    processed_dir: ${data_dir}/processed
+    raw_dir: ${data_dir}/raw
+    batch_size: 128
+    num_workers: 8
+    pin_memory: true
+    sequence_length: 30
+    prediction_horizon: 12
+    validation_split: 0.2
+    test_split: 0.1
+    feature_columns:
+    - latitude
+    - longitude
+    - sog
+    - cog
+    target_columns:
+    - latitude
+    - longitude
+    - sog
+    - cog
+    normalize_features: true
+    filter_outliers: true
+    min_trajectory_length: 50
+  model:
+    name: traisformer
+    type: TRAISFORMER
+    task: trajectory_prediction
+    checkpoint_path: null
+    _target_: src.models.traisformer.TrAISformer
+    d_model: 768
+    nhead: 8
+    num_layers: 8
+    dim_feedforward: 2048
+    dropout: 0.1
+    lat_bins: 250
+    lon_bins: 270
+    sog_bins: 30
+    cog_bins: 72
+    input_dim: 4
+    output_dim: 4
+    sequence_length: 30
+    prediction_horizon: 12
+    supports_anomaly_detection: false
+    supports_uncertainty: true
+  trainer:
+    accelerator: gpu
+    devices: 1
+    precision: 16-mixed
+    max_epochs: 100
+    learning_rate: 0.0001
+    weight_decay: 0.01
+    optimizer: adam
+    scheduler: null
+    check_val_every_n_epoch: 1
+    val_check_interval: null
+    log_every_n_steps: 50
+    gradient_clip_val: 1.0
+    benchmark: true
+    compile: false
+    deterministic: false
+  callbacks:
+    early_stopping: true
+    monitor: val/loss
+    patience: 15
+    mode: min
+    checkpoint_dir: ${output_dir}/checkpoints
+    save_top_k: 3
+    save_last: true
+    lr_logging_interval: epoch
+    device_stats: true
+    rich_progress: true
+  logger:
+    type: wandb
+    name: ${name}
+    save_dir: ${output_dir}/logs
+    version: null
+    wandb_project: ${wandb_project}
+    wandb_tags:
+    - ${model.type}
+    - ${mode}
+    offline: false
+    log_model: true

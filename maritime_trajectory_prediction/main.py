@@ -38,7 +38,6 @@ from typing import Any
 import hydra
 import pytorch_lightning as pl
 from hydra.core.hydra_config import HydraConfig
-from hydra.utils import call
 from omegaconf import DictConfig, OmegaConf
 
 # Add src to path for imports
@@ -138,8 +137,17 @@ def dispatch_mode(cfg: DictConfig) -> Any:
     logger.info(f"Dispatching to {function_path} for mode '{mode}'")
 
     try:
-        # Use Hydra's call utility to invoke the function
-        result = call(function_path, cfg)
+        # Import and call the function directly
+        module_path, function_name = function_path.rsplit(".", 1)
+
+        # Dynamically import the module
+        import importlib
+
+        module = importlib.import_module(module_path)
+        func = getattr(module, function_name)
+
+        # Call the function with the config
+        result = func(cfg)
         logger.info(f"Mode '{mode}' completed successfully")
         return result
     except Exception as e:
