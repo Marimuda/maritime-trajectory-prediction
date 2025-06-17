@@ -2,7 +2,7 @@
 
 # Model metadata
 name: traisformer
-type: TRAISFORMER
+type: traisformer
 task: trajectory_prediction
 checkpoint_path: null  # Set at runtime
 
@@ -21,9 +21,5 @@ sog_bins: 30
 cog_bins: 72
 
 # Model-specific features
-input_dim: 4  # lat, lon, sog, cog
-output_dim: 4
-sequence_length: 30
-prediction_horizon: 12
 supports_anomaly_detection: false
 supports_uncertainty: true

@@ -2,7 +2,7 @@
 
 # Model metadata
 name: ais_fuser
-type: AIS_FUSER
+type: ais_fuser
 task: vessel_interaction
 checkpoint_path: null
 

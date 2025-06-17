@@ -1,9 +1,9 @@
 # TrAISformer sweep experiment configuration
+# @package _global_
 defaults:
+  - override /hydra/sweeper: optuna
   - base
-  - _self_
-  - override model: traisformer
-  - override hydra/sweeper: optuna
+  - override /model: traisformer
 
 hydra:
   sweeper:

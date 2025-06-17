@@ -73,16 +73,14 @@ def create_data_module(cfg: DictConfig):
         from ..data.lightning_datamodule import AISLightningDataModule
 
         datamodule = AISLightningDataModule(
-            data_dir=cfg.data.get("processed_dir", "data/processed"),
+            zarr_path=cfg.data.get("processed_dir", "data/processed")
+            + "/ais_positions.zarr",
             batch_size=cfg.data.batch_size,
             num_workers=cfg.data.num_workers,
             pin_memory=cfg.data.pin_memory,
-            sequence_length=cfg.data.sequence_length,
+            window_size=cfg.data.sequence_length,
             prediction_horizon=cfg.data.prediction_horizon,
-            validation_split=cfg.data.validation_split,
-            test_split=cfg.data.test_split,
-            feature_columns=cfg.data.feature_columns,
-            target_columns=cfg.data.target_columns,
+            features=cfg.data.feature_columns,
         )
 
         logger.info("Created Lightning data module")
@@ -138,9 +136,11 @@ def create_lightning_model(cfg: DictConfig) -> pl.LightningModule:
         logger.info("Wrapped model in Lightning module")
         return lightning_model
 
-    except ImportError:
+    except ImportError as e:
         logger.error("Could not import LightningModelWrapper")
-        raise RuntimeError("Model is not a Lightning module and wrapper not available")
+        raise RuntimeError(
+            "Model is not a Lightning module and wrapper not available"
+        ) from e
 
 
 def log_model_info(model: pl.LightningModule, cfg: DictConfig):

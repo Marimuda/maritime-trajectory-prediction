@@ -1,9 +1,9 @@
 # Configuration for AISFuser hyperparameter sweep
+# @package _global_
 defaults:
+  - override /hydra/sweeper: optuna
   - base
-  - _self_
-  - override model: ais_fuser
-  - override hydra/sweeper: optuna
+  - override /model: ais_fuser
 
 hydra:
   sweeper:
