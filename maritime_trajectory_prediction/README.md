@@ -83,31 +83,30 @@ make data-validate    # Validate processed data
 
 ### Individual Models
 ```bash
-# SOTA Models
-python train_transformer_models.py --model-type motion_transformer --epochs 50
-python train_transformer_models.py --model-type anomaly_transformer --epochs 30
-python src/experiments/train.py model=traisformer
-python src/experiments/train.py model=ais_fuser
+# SOTA Models (unified CLI)
+python main.py mode=train model=motion_transformer trainer.max_epochs=50
+python main.py mode=train model=anomaly_transformer trainer.max_epochs=30
+python main.py mode=train model=traisformer
+python main.py mode=train model=ais_fuser
 
 # Baseline Models
-python train_transformer_models.py --model-type baseline --epochs 50
-python src/experiments/train.py model=lstm
-python src/experiments/train.py model=xgboost
+python main.py mode=train model=lstm trainer.max_epochs=50
+python main.py mode=train model=xgboost
 ```
 
 ### Hyperparameter Sweeps
 ```bash
-./scripts/run_experiments.sh                                    # All models
-python src/experiments/train.py -m experiment=traisformer_sweep # TrAISformer sweep
-python src/experiments/train.py -m experiment=ais_fuser_sweep   # AISFuser sweep
+./scripts/run_experiments.sh                           # All models
+python main.py -m experiment=traisformer_sweep        # TrAISformer sweep
+python main.py -m experiment=ais_fuser_sweep          # AISFuser sweep
 ```
 
 ### Parallel GPU Training
 ```bash
 # Utilize all 3 GPUs simultaneously
-CUDA_VISIBLE_DEVICES=0 python train_transformer_models.py --model-type motion_transformer &
-CUDA_VISIBLE_DEVICES=1 python train_transformer_models.py --model-type anomaly_transformer &
-CUDA_VISIBLE_DEVICES=2 python src/experiments/train.py model=traisformer &
+CUDA_VISIBLE_DEVICES=0 python main.py mode=train model=motion_transformer &
+CUDA_VISIBLE_DEVICES=1 python main.py mode=train model=anomaly_transformer &
+CUDA_VISIBLE_DEVICES=2 python main.py mode=train model=traisformer &
 wait
 ```
 
@@ -178,7 +177,7 @@ This ensures consistency across all models, tests, and data processing pipelines
 ```bash
 make evaluate          # Evaluate all trained models
 make inference         # Run model inference
-python evaluate_transformer_models.py --checkpoints-dir checkpoints/
+python main.py mode=evaluate model.checkpoint_path=checkpoints/best_model.pt
 ```
 
 ### System Monitoring

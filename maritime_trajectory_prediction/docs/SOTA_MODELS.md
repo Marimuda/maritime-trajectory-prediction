@@ -150,44 +150,44 @@ info = get_model_info('motion_transformer')
 
 ### Training Pipeline
 
-Use the unified training script for all models:
+Use the unified CLI for all models:
 
 ```bash
 # Train Anomaly Transformer
-python train_transformer_models.py \
-  --model-type anomaly_transformer \
-  --size medium \
-  --epochs 50 \
-  --batch-size 16 \
-  --learning-rate 1e-4
+python main.py mode=train \
+  model=anomaly_transformer \
+  model.size=medium \
+  trainer.max_epochs=50 \
+  data.batch_size=16 \
+  trainer.learning_rate=1e-4
 
 # Train Motion Transformer
-python train_transformer_models.py \
-  --model-type motion_transformer \
-  --size small \
-  --epochs 100 \
-  --batch-size 32 \
-  --learning-rate 1e-4
+python main.py mode=train \
+  model=motion_transformer \
+  model.size=small \
+  trainer.max_epochs=100 \
+  data.batch_size=32 \
+  trainer.learning_rate=1e-4
 ```
 
 ### Inference Pipeline
 
-Use the unified inference script:
+Use the unified CLI:
 
 ```bash
 # Anomaly detection
-python inference_transformer_models.py \
-  --model-path checkpoints/anomaly_transformer/best_model.pt \
-  --data-path data/test_trajectories.csv \
-  --task anomaly_detection \
-  --threshold 0.7
+python main.py mode=predict \
+  model.checkpoint_path=checkpoints/anomaly_transformer/best_model.pt \
+  predict.input_file=data/test_trajectories.csv \
+  model.task=anomaly_detection \
+  predict.threshold=0.7
 
 # Trajectory prediction
-python inference_transformer_models.py \
-  --model-path checkpoints/motion_transformer/best_model.pt \
-  --data-path data/test_trajectories.csv \
-  --task trajectory_prediction \
-  --output-path results/predictions.json
+python main.py mode=predict \
+  model.checkpoint_path=checkpoints/motion_transformer/best_model.pt \
+  predict.input_file=data/test_trajectories.csv \
+  model.task=trajectory_prediction \
+  predict.output_file=results/predictions.json
 ```
 
 ## Configuration
@@ -218,7 +218,7 @@ data:
 ### Command Line
 
 ```bash
-python train_transformer_models.py --config configs/motion_transformer_medium.yaml
+python main.py mode=train --config-path configs --config-name motion_transformer_medium
 ```
 
 ## Performance Benchmarks
@@ -295,4 +295,3 @@ python train_transformer_models.py --config configs/motion_transformer_medium.ya
 3. **Attention Visualization**: Add attention weight visualization for interpretability
 4. **Multi-Scale Prediction**: Support for multiple prediction horizons simultaneously
 5. **Uncertainty Quantification**: Enhanced confidence estimation and calibration
-
