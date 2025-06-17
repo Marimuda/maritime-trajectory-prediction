@@ -1,3 +1,0 @@
-- mode=train
-- model=traisformer
-- trainer.max_epochs=1

@@ -146,6 +146,9 @@ dmypy.json
 logs/
 *.log
 
+# Hydra outputs
+outputs/
+
 # Wandb
 wandb/
 
@@ -163,4 +166,3 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
-
