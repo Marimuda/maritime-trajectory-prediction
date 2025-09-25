@@ -71,7 +71,9 @@ def create_synthetic_trajectories(n_trajectories: int = 5) -> list[np.ndarray]:
             # Quadratic motion
             distances = (
                 initial_speed * (timestamps / SECONDS_PER_HOUR)
-                + ACCELERATION_FACTOR * acceleration * (timestamps / SECONDS_PER_HOUR) ** 2
+                + ACCELERATION_FACTOR
+                * acceleration
+                * (timestamps / SECONDS_PER_HOUR) ** 2
             )
             direction = np.random.uniform(0, 2 * np.pi)
 
