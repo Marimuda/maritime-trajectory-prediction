@@ -109,6 +109,113 @@ class MotionTransformerLightning(pl.LightningModule):
         }
 
 
+class MotionTransformerTrainer:
+    """
+    Trainer class for Motion Transformer following existing repository pattern.
+    """
+
+    def __init__(
+        self,
+        model: MotionTransformer,
+        learning_rate: float = 1e-4,
+        weight_decay: float = 1e-5,
+        device: str = "cpu",
+    ):
+        """
+        Initialize trainer following existing pattern.
+
+        Args:
+            model: MotionTransformer model
+            learning_rate: Learning rate
+            weight_decay: Weight decay
+            device: Device to use
+        """
+        self.model = model.to(device)
+        self.device = device
+
+        # Optimizer
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+
+    def training_step(self, batch):
+        """Training step following existing pattern."""
+        self.model.train()
+        self.optimizer.zero_grad()
+
+        inputs = batch["inputs"].to(self.device)
+        targets = batch["targets"].to(self.device)
+
+        outputs = self.model(inputs)
+        loss_dict = self.model.compute_loss(outputs, targets, "best_of_n")
+
+        loss = loss_dict["total_loss"]
+        loss.backward()
+        self.optimizer.step()
+
+        return loss.item()
+
+
+# Maritime-specific configurations following existing pattern
+MARITIME_MTR_CONFIG = {
+    "small": {
+        "input_dim": 4,
+        "d_model": 128,
+        "n_queries": 4,
+        "encoder_layers": 2,
+        "decoder_layers": 2,
+        "n_heads": 4,
+        "d_ff": 512,
+        "dropout": 0.1,
+        "prediction_horizon": 10,
+        "output_dim": 4,
+    },
+    "medium": {
+        "input_dim": 4,
+        "d_model": 256,
+        "n_queries": 8,
+        "encoder_layers": 4,
+        "decoder_layers": 4,
+        "n_heads": 8,
+        "d_ff": 1024,
+        "dropout": 0.1,
+        "prediction_horizon": 10,
+        "output_dim": 4,
+    },
+    "large": {
+        "input_dim": 4,
+        "d_model": 512,
+        "n_queries": 16,
+        "encoder_layers": 6,
+        "decoder_layers": 6,
+        "n_heads": 16,
+        "d_ff": 2048,
+        "dropout": 0.1,
+        "prediction_horizon": 10,
+        "output_dim": 4,
+    },
+}
+
+
+def create_motion_transformer(**kwargs) -> MotionTransformer:
+    """
+    Factory to create core MotionTransformer block (respects existing architecture).
+    """
+    return MotionTransformer(**kwargs)
+
+
+def create_maritime_motion_transformer(size: str = "medium") -> MotionTransformer:
+    """
+    Create maritime-configured Motion Transformer following existing pattern.
+    """
+    if size not in MARITIME_MTR_CONFIG:
+        raise ValueError(
+            f"Unknown size: {size}. Available: {list(MARITIME_MTR_CONFIG.keys())}"
+        )
+    config = MARITIME_MTR_CONFIG[size]
+    return MotionTransformer(**config)
+
+
 def create_motion_transformer_lightning(**kwargs) -> MotionTransformerLightning:
     """
     Factory to create the LightningModule with given parameters.

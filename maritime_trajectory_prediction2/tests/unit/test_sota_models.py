@@ -24,11 +24,13 @@ from models.anomaly_transformer import (
     create_anomaly_transformer,
     create_maritime_anomaly_transformer,
 )
-from models.motion_transformer import (
-    MARITIME_MTR_CONFIG,
+from models.blocks.motion_transformer import (
     ContextEncoder,
     MotionDecoder,
     MotionTransformer,
+)
+from models.motion_transformer import (
+    MARITIME_MTR_CONFIG,
     MotionTransformerTrainer,
     create_maritime_motion_transformer,
     create_motion_transformer,

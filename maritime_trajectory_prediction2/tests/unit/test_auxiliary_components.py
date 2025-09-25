@@ -2,14 +2,16 @@
 Tests for additional src modules to increase coverage.
 """
 
+import contextlib
+
 import numpy as np
 import pandas as pd
 import pytest
 
 # Test the actual modules that exist
 from src.data.datamodule import AISDataModule
+from src.metrics.trajectory_metrics import TrajectoryMetrics
 from src.utils.ais_parser import AISParser
-from src.utils.metrics import TrajectoryMetrics
 
 
 class TestAISDataModule:
@@ -53,11 +55,9 @@ class TestAISDataModule:
             dm = AISDataModule(data_dir="./data", batch_size=2, sequence_length=2)
 
             # Test setup
-            try:
-                dm.setup(stage="fit")
-            except Exception:
+            with contextlib.suppress(Exception):
                 # DataModule might need specific data format
-                pass
+                dm.setup(stage="fit")
 
             assert dm.batch_size == 2
             assert dm.sequence_length == 2
@@ -136,7 +136,7 @@ class TestTrajectoryMetrics:
 
         try:
             length = metrics.calculate_trajectory_length(sample_trajectory)
-            assert isinstance(length, (int, float)) or pd.isna(length)
+            assert isinstance(length, int | float) or pd.isna(length)
         except Exception:
             # Method might not be implemented
             pass
@@ -147,7 +147,7 @@ class TestTrajectoryMetrics:
 
         try:
             avg_speed = metrics.calculate_average_speed(sample_trajectory)
-            assert isinstance(avg_speed, (int, float)) or pd.isna(avg_speed)
+            assert isinstance(avg_speed, int | float) or pd.isna(avg_speed)
         except Exception:
             # Method might not be implemented
             pass
@@ -158,7 +158,7 @@ class TestTrajectoryMetrics:
 
         try:
             displacement = metrics.calculate_displacement(sample_trajectory)
-            assert isinstance(displacement, (int, float)) or pd.isna(displacement)
+            assert isinstance(displacement, int | float) or pd.isna(displacement)
         except Exception:
             # Method might not be implemented
             pass
@@ -213,11 +213,9 @@ class TestModuleImports:
         ]
 
         for module_name in optional_modules:
-            try:
-                __import__(module_name)
-            except ImportError:
+            with contextlib.suppress(ImportError):
                 # Optional modules might not be available
-                pass
+                __import__(module_name)
 
 
 class TestErrorHandling:
