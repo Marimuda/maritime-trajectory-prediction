@@ -8,7 +8,7 @@ import pandas as pd
 
 from ..stats.bootstrap import BootstrapCI, BootstrapResult
 from ..stats.corrections import CorrectionResult, multiple_comparison_correction
-from ..stats.tests import TestResult, cliffs_delta, paired_t_test, wilcoxon_test
+from ..stats.tests import StatTestResult, cliffs_delta, paired_t_test, wilcoxon_test
 
 
 @dataclass
@@ -21,7 +21,7 @@ class ComparisonResult:
         str, dict[str, BootstrapResult]
     ]  # model -> metric -> bootstrap result
     pairwise_tests: dict[
-        str, dict[str, TestResult]
+        str, dict[str, StatTestResult]
     ]  # comparison -> metric -> test result
     corrected_pvalues: dict[str, CorrectionResult] | None = None
     summary_table: pd.DataFrame | None = None
@@ -150,7 +150,7 @@ class ModelComparison:
                             primary_test = t_test
 
                         # Combine results
-                        combined_result = TestResult(
+                        combined_result = StatTestResult(
                             test_name=f"{primary_test.test_name} + Cliff's δ",
                             statistic=primary_test.statistic,
                             p_value=primary_test.p_value,
