@@ -56,12 +56,11 @@ class TimeSeriesSplit:
                 test_start_time = df_sorted.iloc[test_idx[0]][time_col]
 
                 # Calculate gap in minutes
-                if hasattr(train_end_time, "total_seconds"):  # timedelta
-                    gap_minutes = (
-                        test_start_time - train_end_time
-                    ).total_seconds() / 60
-                else:  # assume unix timestamp
-                    gap_minutes = (test_start_time - train_end_time) / 60
+                gap_timedelta = test_start_time - train_end_time
+                if hasattr(gap_timedelta, "total_seconds"):  # pandas Timedelta
+                    gap_minutes = gap_timedelta.total_seconds() / 60
+                else:  # assume numeric difference (unix timestamp)
+                    gap_minutes = gap_timedelta / 60
 
                 # Filter test set to respect minimum gap
                 if gap_minutes < self.min_gap_minutes:
@@ -71,7 +70,7 @@ class TimeSeriesSplit:
                     valid_test_mask = (
                         df_sorted.iloc[test_idx][time_col] >= min_test_time
                     )
-                    test_idx = test_idx[valid_test_mask.values]
+                    test_idx = test_idx[valid_test_mask.values]  # noqa: PLW2901
 
             if len(test_idx) > 0:  # Only yield if test set is not empty
                 yield train_idx, test_idx
@@ -115,8 +114,7 @@ class GroupKFold:
         groups = df[group_col].values
         X_dummy = np.zeros((len(df), 1))  # Dummy features for sklearn compatibility
 
-        for train_idx, test_idx in self.sklearn_splitter.split(X_dummy, groups=groups):
-            yield train_idx, test_idx
+        yield from self.sklearn_splitter.split(X_dummy, groups=groups)
 
     def get_group_distribution(
         self, df: pd.DataFrame, group_col: str = "mmsi"
@@ -125,7 +123,7 @@ class GroupKFold:
         groups = df[group_col].unique()
         fold_assignments = []
 
-        for fold_idx, (train_idx, test_idx) in enumerate(self.split(df, group_col)):
+        for fold_idx, (_train_idx, test_idx) in enumerate(self.split(df, group_col)):
             test_groups = set(df.iloc[test_idx][group_col].unique())
             for group in groups:
                 if group in test_groups:
@@ -258,12 +256,11 @@ def validate_split_quality(
 
         # Calculate time gap
         if train_time_range[1] < test_time_range[0]:
-            if hasattr(train_time_range[1], "total_seconds"):
-                gap_minutes = (
-                    test_time_range[0] - train_time_range[1]
-                ).total_seconds() / 60
-            else:
-                gap_minutes = (test_time_range[0] - train_time_range[1]) / 60
+            gap_timedelta = test_time_range[0] - train_time_range[1]
+            if hasattr(gap_timedelta, "total_seconds"):  # pandas Timedelta
+                gap_minutes = gap_timedelta.total_seconds() / 60
+            else:  # assume numeric difference (unix timestamp)
+                gap_minutes = gap_timedelta / 60
             metrics["time_gaps_minutes"].append(gap_minutes)
 
     # Summary statistics

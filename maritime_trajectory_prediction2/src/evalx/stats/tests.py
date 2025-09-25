@@ -67,11 +67,18 @@ def paired_t_test(
     if len(group_a) != len(group_b):
         raise ValueError("Groups must have equal length for paired t-test")
 
-    # Perform paired t-test
-    statistic, p_value = stats.ttest_rel(group_a, group_b, alternative=alternative)
+    # Check for identical groups (no difference to test)
+    differences = group_a - group_b
+    if np.all(differences == 0):
+        # No difference between groups - return non-significant result
+        statistic = 0.0
+        p_value = 1.0
+    else:
+        # Perform paired t-test
+        statistic, p_value = stats.ttest_rel(group_a, group_b, alternative=alternative)
 
     # Calculate effect size (Cohen's d for paired samples)
-    differences = group_a - group_b
+    # (differences already calculated above)
     std_diff = np.std(differences, ddof=1)
     if std_diff == 0 or np.isnan(std_diff):
         # Handle case where differences are identical (no variation)

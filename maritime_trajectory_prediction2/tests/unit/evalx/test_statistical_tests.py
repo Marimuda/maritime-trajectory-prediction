@@ -316,9 +316,9 @@ class TestIntegrationScenarios:
 
     def test_maritime_model_comparison_workflow(self):
         """Test typical maritime model comparison workflow."""
-        # Simulate ADE scores from cross-validation
-        lstm_ade = np.array([1.2, 1.1, 1.3, 1.0, 1.15])
-        transformer_ade = np.array([0.9, 0.8, 1.0, 0.7, 0.85])
+        # Simulate ADE scores from cross-validation (transformer clearly better)
+        lstm_ade = np.array([1.5, 1.4, 1.6, 1.3, 1.5, 1.7, 1.2, 1.8])
+        transformer_ade = np.array([0.8, 0.7, 0.9, 0.6, 0.8, 0.9, 0.5, 1.0])
 
         # Perform paired t-test
         t_result = paired_t_test(lstm_ade, transformer_ade)
@@ -336,8 +336,8 @@ class TestIntegrationScenarios:
         # Should also be significant
         assert w_result.p_value < 0.05
 
-        # Cliff's delta for effect size
-        cliff_result = cliffs_delta(lstm_ade, transformer_ade)
+        # Cliff's delta for effect size (transformer vs LSTM)
+        cliff_result = cliffs_delta(transformer_ade, lstm_ade)
 
         # Should show large negative effect (transformer better, lower ADE)
         assert cliff_result.effect_size < -0.5
