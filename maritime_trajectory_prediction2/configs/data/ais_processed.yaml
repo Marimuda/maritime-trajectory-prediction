@@ -5,6 +5,9 @@ _target_: src.data.datamodule.AISFuserDataModule
 processed_dir: ${data_dir}/processed
 raw_dir:       ${data_dir}/raw
 
+# Large dataset configuration (6.2GB AIS data)
+large_dataset_path: ${data_dir}/raw/combined_aiscatcher_large.log
+
 # Loading parameters
 batch_size:    128
 # Instead of hard‐coding 124, let the user override via env var or CLI:
