@@ -35,18 +35,18 @@ class MotionTransformerLightning(pl.LightningModule):
 
             cfg = SimpleConfig(**kwargs)
 
-        # Instantiate core MotionTransformer
+        # Instantiate core MotionTransformer with proper defaults
         self.model = MotionTransformer(
-            input_dim=cfg.input_dim,
-            d_model=cfg.d_model,
-            n_queries=cfg.n_queries,
-            encoder_layers=cfg.encoder_layers,
-            decoder_layers=cfg.decoder_layers,
-            n_heads=cfg.n_heads,
-            d_ff=cfg.d_ff,
-            dropout=cfg.dropout,
-            prediction_horizon=cfg.prediction_horizon,
-            output_dim=cfg.output_dim,
+            input_dim=getattr(cfg, "input_dim", 4),
+            d_model=getattr(cfg, "d_model", 256),
+            n_queries=getattr(cfg, "n_queries", 6),
+            encoder_layers=getattr(cfg, "encoder_layers", 4),
+            decoder_layers=getattr(cfg, "decoder_layers", 6),
+            n_heads=getattr(cfg, "n_heads", 8),
+            d_ff=getattr(cfg, "d_ff", 1024),
+            dropout=getattr(cfg, "dropout", 0.1),
+            prediction_horizon=getattr(cfg, "prediction_horizon", 30),
+            output_dim=getattr(cfg, "output_dim", 4),
         )
         # Loss type for multi-modal
         self.loss_type = getattr(cfg, "loss_type", "best_of_n")
@@ -107,6 +107,40 @@ class MotionTransformerLightning(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
         }
+
+    def predict_best_trajectory(
+        self, x: torch.Tensor, context_mask: torch.Tensor = None
+    ) -> torch.Tensor:
+        """
+        Predict best trajectory (Lightning wrapper method).
+
+        Args:
+            x: Input tensor
+            context_mask: Optional context mask
+
+        Returns:
+            Best trajectory tensor
+        """
+        return self.model.predict_best_trajectory(x, context_mask)
+
+    def compute_loss(
+        self,
+        outputs: dict[str, torch.Tensor],
+        targets: torch.Tensor,
+        loss_type: str = "best_of_n",
+    ) -> dict[str, torch.Tensor]:
+        """
+        Compute loss (Lightning wrapper method).
+
+        Args:
+            outputs: Model outputs dictionary
+            targets: Target tensor
+            loss_type: Type of loss computation
+
+        Returns:
+            Dictionary containing loss components
+        """
+        return self.model.compute_loss(outputs, targets, loss_type)
 
 
 class MotionTransformerTrainer:
@@ -277,16 +311,18 @@ def create_motion_transformer(**kwargs) -> MotionTransformer:
     return MotionTransformer(**kwargs)
 
 
-def create_maritime_motion_transformer(size: str = "medium") -> MotionTransformer:
+def create_maritime_motion_transformer(
+    size: str = "medium",
+) -> MotionTransformerLightning:
     """
-    Create maritime-configured Motion Transformer following existing pattern.
+    Create maritime-configured Motion Transformer Lightning module for consistency with unified API.
     """
     if size not in MARITIME_MTR_CONFIG:
         raise ValueError(
             f"Unknown size: {size}. Available: {list(MARITIME_MTR_CONFIG.keys())}"
         )
     config = MARITIME_MTR_CONFIG[size]
-    return MotionTransformer(**config)
+    return MotionTransformerLightning(None, **config)
 
 
 def create_motion_transformer_lightning(**kwargs) -> MotionTransformerLightning:

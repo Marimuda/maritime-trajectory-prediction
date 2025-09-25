@@ -1,0 +1,24 @@
+{
+  "level": "sequences",
+  "created_at": "2025-09-25T20:05:11.061225",
+  "cache_key": "sequences_94949757_cdce0f94aaa7",
+  "source_files": [
+    "/tmp/tmp_ilft78c.parquet"
+  ],
+  "source_hashes": {
+    "/tmp/tmp_ilft78c.parquet": "51cfa0094dcb22e929e1d24b9a0ddf9d"
+  },
+  "parameters": {
+    "sequence_length": 10,
+    "prediction_horizon": 5,
+    "features": [
+      "cog",
+      "lat",
+      "lon",
+      "sog"
+    ]
+  },
+  "format": "pkl",
+  "size_bytes": 258775,
+  "version": "1.0"
+}

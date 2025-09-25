@@ -282,10 +282,10 @@ class TestMotionTransformer:
         assert outputs["confidences"].shape == (batch_size, 4)  # n_queries
         assert outputs["query_features"].shape == (batch_size, 10, 4, 128)
 
-        # Check confidence values are in [0, 1]
-        assert (outputs["confidences"] >= 0).all() and (
-            outputs["confidences"] <= 1
-        ).all()
+        # Check confidence values are logits (can be any real values for cross_entropy loss)
+        assert torch.isfinite(
+            outputs["confidences"]
+        ).all()  # Just check they're valid numbers
 
     def test_motion_transformer_forward(self, motion_transformer, sample_context):
         """Test MotionTransformer forward pass."""

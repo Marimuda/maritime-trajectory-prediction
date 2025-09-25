@@ -1,0 +1,24 @@
+{
+  "level": "sequences",
+  "created_at": "2025-09-25T19:59:10.369015",
+  "cache_key": "sequences_ef6b7134_cdce0f94aaa7",
+  "source_files": [
+    "/tmp/tmpyd0a1uir.parquet"
+  ],
+  "source_hashes": {
+    "/tmp/tmpyd0a1uir.parquet": "849da07da6fbda2a55b8f9ac8c48be93"
+  },
+  "parameters": {
+    "sequence_length": 10,
+    "prediction_horizon": 5,
+    "features": [
+      "cog",
+      "lat",
+      "lon",
+      "sog"
+    ]
+  },
+  "format": "pkl",
+  "size_bytes": 258775,
+  "version": "1.0"
+}

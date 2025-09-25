@@ -1,0 +1,24 @@
+{
+  "level": "sequences",
+  "created_at": "2025-09-25T20:03:35.376237",
+  "cache_key": "sequences_7002385d_cdce0f94aaa7",
+  "source_files": [
+    "/tmp/tmpk_2caldl.parquet"
+  ],
+  "source_hashes": {
+    "/tmp/tmpk_2caldl.parquet": "0ca001d7db4bc080f1580f45bf69f530"
+  },
+  "parameters": {
+    "sequence_length": 10,
+    "prediction_horizon": 5,
+    "features": [
+      "cog",
+      "lat",
+      "lon",
+      "sog"
+    ]
+  },
+  "format": "pkl",
+  "size_bytes": 258775,
+  "version": "1.0"
+}

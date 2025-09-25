@@ -501,42 +501,31 @@ class AnomalyTransformerLightning(pl.LightningModule):
     def __init__(self, config=None, **kwargs):
         super().__init__()
 
-        # Handle both config object and individual parameters
+        # Clean architecture - handle config object OR direct kwargs (like MotionTransformer)
         if config is not None:
             self.save_hyperparameters(config)
             cfg = config
         else:
-            cfg_dict = {
-                "input_dim": kwargs.get("input_dim", 4),
-                "d_model": kwargs.get("hidden_dim", 512),
-                "n_heads": kwargs.get("num_heads", 8),
-                "n_layers": kwargs.get("num_layers", 6),
-                "d_ff": kwargs.get("hidden_dim", 512) * 4,
-                "dropout": kwargs.get("dropout", 0.1),
-                "max_seq_len": kwargs.get("max_seq_len", 1000),
-                "learning_rate": kwargs.get("learning_rate", 1e-4),
-                "weight_decay": kwargs.get("weight_decay", 1e-5),
-                "lambda_assoc": kwargs.get("lambda_assoc", 1.0),
-            }
-            self.save_hyperparameters(cfg_dict)
+            # Save kwargs directly as hyperparameters - no hacky mapping
+            self.save_hyperparameters(kwargs)
 
-            # Create simple config object for attribute access
+            # Create simple config object for attribute access (same pattern as MotionTransformer)
             class SimpleConfig:
-                def __init__(self, **kwargs):
-                    for k, v in kwargs.items():
-                        setattr(self, k, v)
+                def __init__(self, **k):
+                    for key, val in k.items():
+                        setattr(self, key, val)
 
-            cfg = SimpleConfig(**cfg_dict)
+            cfg = SimpleConfig(**kwargs)
 
-        # Create the actual model
+        # Create the actual model with proper defaults
         self.model = AnomalyTransformer(
-            input_dim=cfg.input_dim,
-            d_model=cfg.d_model,
-            n_heads=cfg.n_heads,
-            n_layers=cfg.n_layers,
-            d_ff=cfg.d_ff,
-            dropout=cfg.dropout,
-            max_seq_len=cfg.max_seq_len,
+            input_dim=getattr(cfg, "input_dim", 4),
+            d_model=getattr(cfg, "d_model", 512),
+            n_heads=getattr(cfg, "n_heads", 8),
+            n_layers=getattr(cfg, "n_layers", 6),
+            d_ff=getattr(cfg, "d_ff", 2048),
+            dropout=getattr(cfg, "dropout", 0.1),
+            max_seq_len=getattr(cfg, "max_seq_len", 1000),
         )
 
         self.lambda_assoc = getattr(cfg, "lambda_assoc", 1.0)
@@ -596,7 +585,7 @@ class AnomalyTransformerLightning(pl.LightningModule):
         total_loss = reconstruction_loss + self.lambda_assoc * association_loss
 
         # Additional anomaly detection metrics
-        anomaly_results = self.model.detect_anomalies(inputs, threshold=0.5)
+        anomaly_results = self.detect_anomalies(inputs, threshold=0.5)
         anomaly_rate = anomaly_results["binary_anomalies"].float().mean()
 
         # Log test losses and metrics
@@ -631,6 +620,36 @@ class AnomalyTransformerLightning(pl.LightningModule):
             "lr_scheduler": scheduler,
             "monitor": "val_loss",
         }
+
+    def compute_anomaly_criterion(
+        self, outputs: dict, inputs: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """
+        Compute anomaly detection criterion (Lightning wrapper method).
+
+        Args:
+            outputs: Model outputs dictionary
+            inputs: Input tensor
+
+        Returns:
+            Dictionary containing loss components
+        """
+        return self.model.compute_anomaly_criterion(outputs, inputs)
+
+    def detect_anomalies(
+        self, inputs: torch.Tensor, threshold: float = 0.5
+    ) -> dict[str, torch.Tensor]:
+        """
+        Detect anomalies in input data (Lightning wrapper method).
+
+        Args:
+            inputs: Input tensor [batch_size, seq_len, features]
+            threshold: Anomaly detection threshold
+
+        Returns:
+            Dictionary containing anomaly detection results
+        """
+        return self.model.detect_anomalies(inputs, threshold)
 
 
 # Maritime-specific configurations
