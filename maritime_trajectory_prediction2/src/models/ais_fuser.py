@@ -12,7 +12,7 @@ from torch import nn
 
 # Reusable blocks
 from .blocks.ais_fuser_blocks import MaritimeGraphNetwork
-from .blocks.transformer_blocks import TransformerBlock
+from .blocks.transformer import TransformerBlock
 
 
 class AISFuserLightning(pl.LightningModule):

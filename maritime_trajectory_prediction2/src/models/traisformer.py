@@ -9,7 +9,7 @@ import torch
 from torch import nn
 
 # Reusable transformer components
-from .blocks.transformer_blocks import (
+from .blocks.transformer import (
     PositionalEncoding,
     TransformerBlock,
 )
@@ -82,11 +82,11 @@ class TrAISformer(pl.LightningModule):
         Expects keys 'lat_idx','lon_idx','sog_idx','cog_idx'.
         Returns: [B, seq_len, d_model]
         """
-        l = self.lat_embed(batch["lat_idx"])
-        lo = self.lon_embed(batch["lon_idx"])
-        s = self.sog_embed(batch["sog_idx"])
-        c = self.cog_embed(batch["cog_idx"])
-        return torch.cat([l, lo, s, c], dim=-1)
+        lat_emb = self.lat_embed(batch["lat_idx"])
+        lon_emb = self.lon_embed(batch["lon_idx"])
+        sog_emb = self.sog_embed(batch["sog_idx"])
+        cog_emb = self.cog_embed(batch["cog_idx"])
+        return torch.cat([lat_emb, lon_emb, sog_emb, cog_emb], dim=-1)
 
     def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         x = self.embed_inputs(batch)

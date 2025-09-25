@@ -18,8 +18,15 @@ import torch
 from omegaconf import DictConfig
 
 from ..data.maritime_message_processor import AISProcessor
-from ..models.factory import load_model
+from ..models.model_factory import load_model
 from ..utils.maritime_utils import MaritimeUtils
+
+# Constants for tensor dimensions and data structure
+TENSOR_2D = 2  # 2D tensor dimension (for input data without batch dimension)
+TENSOR_3D = 3  # 3D tensor dimension (batch, sequence, features)
+COORDINATE_PAIR_SIZE = 2  # Number of coordinate features (lat, lon)
+POWER_OF_TWO = 2  # Exponent for squared operations (MSE calculation)
+HAVERSINE_MULTIPLIER = 2  # Multiplier in Haversine distance formula
 
 logger = logging.getLogger(__name__)
 
@@ -133,17 +140,17 @@ class UnifiedPredictor:
                 )
 
             # Add batch dimension if needed
-            if tensor_data.dim() == 2:
+            if tensor_data.dim() == TENSOR_2D:
                 tensor_data = tensor_data.unsqueeze(0)
 
         elif isinstance(data, np.ndarray):
             tensor_data = torch.tensor(data, dtype=torch.float32)
-            if tensor_data.dim() == 2:
+            if tensor_data.dim() == TENSOR_2D:
                 tensor_data = tensor_data.unsqueeze(0)
 
         elif isinstance(data, torch.Tensor):
             tensor_data = data.float()
-            if tensor_data.dim() == 2:
+            if tensor_data.dim() == TENSOR_2D:
                 tensor_data = tensor_data.unsqueeze(0)
 
         else:
@@ -248,7 +255,7 @@ class UnifiedPredictor:
                 next_step = output
 
             # Extract prediction for next timestep
-            if len(next_step.shape) == 3:  # [batch, seq, features]
+            if len(next_step.shape) == TENSOR_3D:  # [batch, seq, features]
                 pred = next_step[:, -1, :]  # Last time step
             else:
                 pred = next_step
@@ -256,7 +263,7 @@ class UnifiedPredictor:
             predictions.append(pred)
 
             # Update input for next step (sliding window)
-            if len(current_input.shape) == 3:  # [batch, seq_len, features]
+            if len(current_input.shape) == TENSOR_3D:  # [batch, seq_len, features]
                 new_input = torch.cat(
                     [
                         current_input[:, 1:, :],  # Remove oldest step
@@ -426,19 +433,21 @@ class UnifiedPredictor:
             return {}
 
         # Extract positions (lat, lon) from ground truth
-        if len(ground_truth.shape) == 3:
-            gt_positions = ground_truth[0, :, :2]  # Take first batch
+        if len(ground_truth.shape) == TENSOR_3D:
+            gt_positions = ground_truth[0, :, :COORDINATE_PAIR_SIZE]  # Take first batch
         else:
-            gt_positions = ground_truth[:, :2]
+            gt_positions = ground_truth[:, :COORDINATE_PAIR_SIZE]
 
         errors = []
 
         for pred_traj in predicted_trajectories:
             # Extract positions from prediction
-            if len(pred_traj.shape) == 3:
-                pred_positions = pred_traj[0, :, :2]  # Take first batch
+            if len(pred_traj.shape) == TENSOR_3D:
+                pred_positions = pred_traj[
+                    0, :, :COORDINATE_PAIR_SIZE
+                ]  # Take first batch
             else:
-                pred_positions = pred_traj[:, :2]
+                pred_positions = pred_traj[:, :COORDINATE_PAIR_SIZE]
 
             # Limit to minimum length
             min_len = min(len(gt_positions), len(pred_positions))
@@ -446,7 +455,7 @@ class UnifiedPredictor:
             pred_pos = pred_positions[:min_len]
 
             # Calculate metrics
-            mse = np.mean((pred_pos - gt_pos) ** 2)
+            mse = np.mean((pred_pos - gt_pos) ** POWER_OF_TWO)
             rmse = np.sqrt(mse)
 
             # Calculate distances at each step
@@ -498,8 +507,11 @@ class UnifiedPredictor:
         # Haversine formula
         dlon = lon2 - lon1
         dlat = lat2 - lat1
-        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
-        c = 2 * asin(sqrt(a))
+        a = (
+            sin(dlat / HAVERSINE_MULTIPLIER) ** POWER_OF_TWO
+            + cos(lat1) * cos(lat2) * sin(dlon / HAVERSINE_MULTIPLIER) ** POWER_OF_TWO
+        )
+        c = HAVERSINE_MULTIPLIER * asin(sqrt(a))
 
         # Earth radius in kilometers
         return 6371.0 * c
@@ -523,7 +535,7 @@ class UnifiedPredictor:
             if "predictions" in results:
                 # Trajectory predictions
                 best_traj = results["best_prediction"]
-                if len(best_traj.shape) == 3:
+                if len(best_traj.shape) == TENSOR_3D:
                     best_traj = best_traj[0]  # Take first batch
 
                 df = pd.DataFrame(
@@ -588,10 +600,10 @@ class UnifiedPredictor:
         plt.figure(figsize=(12, 8))
 
         # Extract position data
-        if len(input_data.shape) == 3:
-            input_positions = input_data[0, :, :2]
+        if len(input_data.shape) == TENSOR_3D:
+            input_positions = input_data[0, :, :COORDINATE_PAIR_SIZE]
         else:
-            input_positions = input_data[:, :2]
+            input_positions = input_data[:, :COORDINATE_PAIR_SIZE]
 
         # Plot input trajectory
         plt.plot(
@@ -606,10 +618,10 @@ class UnifiedPredictor:
         # Plot predictions
         if "best_prediction" in predictions:
             best_pred = predictions["best_prediction"]
-            if len(best_pred.shape) == 3:
+            if len(best_pred.shape) == TENSOR_3D:
                 best_pred = best_pred[0]
 
-            pred_positions = best_pred[:, :2]
+            pred_positions = best_pred[:, :COORDINATE_PAIR_SIZE]
             plt.plot(
                 pred_positions[:, 1],
                 pred_positions[:, 0],
@@ -623,17 +635,16 @@ class UnifiedPredictor:
             if "predictions" in predictions and len(predictions["predictions"]) > 1:
                 for i, pred in enumerate(predictions["predictions"]):
                     if i != predictions.get("best_trajectory_idx", 0):
-                        if len(pred.shape) == 3:
-                            pred = pred[0]
-                        pred_pos = pred[:, :2]
+                        pred_data = pred[0] if len(pred.shape) == TENSOR_3D else pred
+                        pred_pos = pred_data[:, :COORDINATE_PAIR_SIZE]
                         plt.plot(pred_pos[:, 1], pred_pos[:, 0], "r-", alpha=0.3)
 
         # Plot ground truth if available
         if ground_truth is not None:
-            if len(ground_truth.shape) == 3:
-                gt_positions = ground_truth[0, :, :2]
+            if len(ground_truth.shape) == TENSOR_3D:
+                gt_positions = ground_truth[0, :, :COORDINATE_PAIR_SIZE]
             else:
-                gt_positions = ground_truth[:, :2]
+                gt_positions = ground_truth[:, :COORDINATE_PAIR_SIZE]
 
             plt.plot(
                 gt_positions[:, 1],

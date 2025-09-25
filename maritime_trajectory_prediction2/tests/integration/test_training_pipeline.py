@@ -172,8 +172,12 @@ class TestTrainingPipeline:
             assert confidences.shape == (batch_size, n_queries)
 
             # Validate output shapes match target expectations
-            assert trajectories.shape[-1] == target_tensor.shape[-1], "Output and target feature dimensions must match"
-            assert trajectories.shape[1] == target_tensor.shape[1], "Output and target prediction horizons must match"
+            assert (
+                trajectories.shape[-1] == target_tensor.shape[-1]
+            ), "Output and target feature dimensions must match"
+            assert (
+                trajectories.shape[1] == target_tensor.shape[1]
+            ), "Output and target prediction horizons must match"
 
             print(f"Trajectories shape: {trajectories.shape}")
             print(f"Confidences shape: {confidences.shape}")

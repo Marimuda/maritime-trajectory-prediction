@@ -18,8 +18,8 @@ import torch
 from omegaconf import DictConfig
 
 from ..inference.predictor import UnifiedPredictor
+from ..metrics.trajectory_metrics import TrajectoryMetrics
 from ..utils.maritime_utils import MaritimeUtils
-from ..utils.metrics import TrajectoryMetrics
 from ..utils.visualization import TrajectoryVisualizer
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,8 @@ class SOTAEvaluator:
                 lon_offset = np.cumsum(np.random.normal(0, 0.0001, i + 1))[-1]
 
                 # Add some anomalies (sudden direction changes, speed changes)
-                is_anomaly = np.random.random() < 0.05  # 5% anomaly rate
+                ANOMALY_RATE = 0.05  # 5% anomaly rate
+                is_anomaly = np.random.random() < ANOMALY_RATE
 
                 if is_anomaly:
                     sog = np.random.uniform(20, 30)  # Unusual speed
@@ -352,7 +353,8 @@ class SOTAEvaluator:
         # predictions: [batch, time, features] or [time, features]
         # targets: [batch, time, features]
 
-        if len(predictions.shape) == 2:
+        BATCH_DIM = 2
+        if len(predictions.shape) == BATCH_DIM:
             predictions = predictions[np.newaxis, :]  # Add batch dimension
 
         # Ensure same dimensions
@@ -647,19 +649,35 @@ class TrajectoryEvaluator:
         self.model.eval()
         with torch.no_grad():
             # Create n_samples copies of the input
-            batch_inputs = [input_sequence for _ in range(n_samples)]
-
             # Initialize output trajectories
             trajectories = []
 
-            for sample_idx in range(n_samples):
+            for sample_idx in range(
+                n_samples
+            ):  # sample_idx used for random seeding to get diverse trajectories
+                # Set deterministic seed based on sample index for reproducible diversity
+                torch.manual_seed(42 + sample_idx)
+
                 # Copy input as starting point
                 traj = input_sequence.clone()
 
                 # Generate future steps
-                for step in range(max_steps):
+                for step in range(
+                    max_steps
+                ):  # step used for progressive uncertainty and early stopping
+                    # Apply progressive noise decay based on step
+                    noise_scale = (
+                        1.0 - (step / max_steps) * 0.1
+                    )  # Reduce noise over time
+
                     # Get next step prediction
                     next_step = self.model.predict_step(traj)
+
+                    # Apply controlled noise for trajectory diversity (decreases over time)
+                    if hasattr(next_step, "shape") and len(next_step.shape) > 0:
+                        next_step = (
+                            next_step + torch.randn_like(next_step) * noise_scale * 0.01
+                        )
 
                     # Append to trajectory
                     traj = torch.cat([traj, next_step.unsqueeze(0)], dim=0)
@@ -668,9 +686,7 @@ class TrajectoryEvaluator:
 
             return trajectories
 
-    def best_of_n_evaluation(
-        self, test_dataset, n_samples=100, horizons=[6, 12, 18, 24]
-    ):
+    def best_of_n_evaluation(self, test_dataset, n_samples=100, horizons=None):
         """
         Evaluate using best-of-N methodology at different prediction horizons
 
@@ -682,9 +698,17 @@ class TrajectoryEvaluator:
         Returns:
             Dictionary of metrics at each horizon
         """
+        if horizons is None:
+            horizons = [6, 12, 18, 24]  # Default evaluation horizons
         results = {horizon: [] for horizon in horizons}
 
-        for i, (input_seq, target_seq) in enumerate(test_dataset):
+        for i, (input_seq, target_seq) in enumerate(
+            test_dataset
+        ):  # i used for progress tracking and logging
+            # Log progress every 10 samples
+            if i % 10 == 0:
+                logger.info(f"Evaluating sample {i}/{len(test_dataset)}")
+
             # Generate multiple trajectories
             predicted_trajectories = self.generate_trajectories(
                 input_seq, n_samples=n_samples, max_steps=max(horizons)

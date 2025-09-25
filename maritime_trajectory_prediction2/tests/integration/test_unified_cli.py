@@ -177,7 +177,7 @@ def test_unified_cli_structure():
         "config/dataclasses.py",
         "config/store.py",
         "data/preprocess.py",
-        "models/factory.py",
+        "models/model_factory.py",
         "training/trainer.py",
         "inference/predictor.py",
         "experiments/train.py",

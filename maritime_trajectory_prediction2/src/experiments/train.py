@@ -13,7 +13,7 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig
 
-from ..models.factory import create_model
+from ..models.model_factory import create_model
 from ..training.trainer import create_trainer
 
 logger = logging.getLogger(__name__)

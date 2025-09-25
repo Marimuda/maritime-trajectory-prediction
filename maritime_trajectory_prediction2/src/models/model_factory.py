@@ -22,7 +22,8 @@ from .baseline_models.kalman.lightning_adapter import (
     create_imm_lightning,
     create_nca_lightning,
 )
-from .benchmark_models import LSTMModel, XGBoostModel
+from .benchmark_models.lstm_model import LSTMModelLightning
+from .benchmark_models.xgboost_model import XGBoostModelLightning
 from .motion_transformer import MotionTransformerLightning
 from .traisformer import TrAISformer
 
@@ -60,9 +61,9 @@ def create_model(config: DictConfig | dict[str, Any]) -> pl.LightningModule:
     elif model_type == "ais_fuser":
         return AISFuserLightning(config)
     elif model_type == "lstm":
-        return LSTMModel(config)
+        return LSTMModelLightning(config)
     elif model_type == "xgboost":
-        return XGBoostModel(config)
+        return XGBoostModelLightning(config)
     elif model_type == "motion_transformer":
         return MotionTransformerLightning(config)
     elif model_type in ["kalman", "imm", "kalman_imm", "maritime_imm"]:
@@ -123,9 +124,9 @@ def get_model_class(model_type: str) -> Any:
     if mt == "ais_fuser":
         return AISFuserLightning
     if mt == "lstm":
-        return LSTMModel
+        return LSTMModelLightning
     if mt == "xgboost":
-        return XGBoostModel
+        return XGBoostModelLightning
     if mt == "motion_transformer":
         return MotionTransformerLightning
     if mt in ["kalman", "imm", "kalman_imm", "maritime_imm"]:

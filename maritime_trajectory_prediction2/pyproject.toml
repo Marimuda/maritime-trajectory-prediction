@@ -53,6 +53,7 @@ ignore = [
     "PLR0913", # too many arguments
     "PLR0912", # too many branches
     "PLR0915", # too many statements
+    "PLR0911", # too many return statements (acceptable for factory/dispatch functions)
 ]
 
 [tool.ruff.lint.per-file-ignores]

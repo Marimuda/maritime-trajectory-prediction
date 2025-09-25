@@ -17,8 +17,8 @@ import pandas as pd
 import torch
 from omegaconf import DictConfig
 
-from ..data.datamodule import create_simple_datamodule
-from ..models.factory import create_model
+from ..data.datamodule import AISDataModule
+from ..models.model_factory import create_model
 from ..training.trainer import create_trainer
 
 logger = logging.getLogger(__name__)
@@ -320,8 +320,14 @@ class ModelBenchmarker:
             model = create_model(train_config.model)
             trainer_wrapper = create_trainer(train_config)
 
-            # Create simple data module with dummy data
-            datamodule = create_simple_datamodule(train_config)
+            # Create data module directly
+            datamodule = AISDataModule(
+                data_path=train_config.get("data_path", "dummy_path"),
+                batch_size=train_config.get("batch_size", 16),
+                sequence_length=train_config.get("sequence_length", 10),
+                prediction_horizon=train_config.get("prediction_horizon", 5),
+                num_workers=train_config.get("num_workers", 0),
+            )
 
             # Measure training time
             start_time = time.time()
@@ -391,6 +397,7 @@ class ModelBenchmarker:
                     # Benchmark runs
                     times = []
                     memory_usage = []
+                    output_sizes = []
 
                     for _ in range(iterations):
                         # Clear cache
@@ -406,6 +413,13 @@ class ModelBenchmarker:
 
                         with torch.no_grad():
                             output = model(input_data)
+                            # Track output size for memory profiling
+                            output_size = (
+                                output.numel()
+                                if hasattr(output, "numel")
+                                else len(str(output))
+                            )
+                            output_sizes.append(output_size)
 
                         if torch.cuda.is_available():
                             torch.cuda.synchronize()
@@ -428,6 +442,9 @@ class ModelBenchmarker:
                         "max_time": np.max(times),
                         "throughput": batch_size / np.mean(times),  # samples per second
                         "mean_memory": np.mean(memory_usage) if memory_usage else 0,
+                        "mean_output_size": np.mean(output_sizes)
+                        if output_sizes
+                        else 0,
                         "iterations": iterations,
                     }
 
@@ -610,7 +627,7 @@ def run_benchmarking(cfg: DictConfig) -> dict[str, Any]:
             for key, value in results["results"].items():
                 if isinstance(value, dict):
                     json_results[key] = {
-                        k: float(v) if isinstance(v, (np.floating, np.integer)) else v
+                        k: float(v) if isinstance(v, np.floating | np.integer) else v
                         for k, v in value.items()
                     }
                 else:
