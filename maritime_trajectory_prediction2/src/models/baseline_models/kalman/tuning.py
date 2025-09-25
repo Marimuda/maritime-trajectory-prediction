@@ -211,7 +211,10 @@ class KalmanTuner:
         NCA_PARAM_COUNT = 7
         CT_PARAM_COUNT = 7
 
-        if self.model_class == NearlyConstantAccelModel and len(params) >= NCA_PARAM_COUNT:
+        if (
+            self.model_class == NearlyConstantAccelModel
+            and len(params) >= NCA_PARAM_COUNT
+        ):
             config.acceleration_process_noise = params[5]
             config.initial_acceleration_uncertainty = params[6]
         elif self.model_class == CoordinatedTurnModel and len(params) >= CT_PARAM_COUNT:
@@ -380,7 +383,9 @@ class KalmanTuner:
             # Fallback to default configuration
             self.best_config = MotionModelConfig()
             self.best_score = float("inf")
-            warnings.warn("Optimization failed, using default configuration", stacklevel=2)
+            warnings.warn(
+                "Optimization failed, using default configuration", stacklevel=2
+            )
 
         return self.best_config
 
@@ -471,7 +476,9 @@ class IMMTuner:
                         f"{model_class.__name__} tuned with score: {tuner.best_score:.4f}"
                     )
                 except Exception as e:
-                    warnings.warn(f"Failed to tune {model_class.__name__}: {e}", stacklevel=2)
+                    warnings.warn(
+                        f"Failed to tune {model_class.__name__}: {e}", stacklevel=2
+                    )
                     self.individual_tuners[model_class.__name__] = None
 
         # Step 2: Create IMM configuration
