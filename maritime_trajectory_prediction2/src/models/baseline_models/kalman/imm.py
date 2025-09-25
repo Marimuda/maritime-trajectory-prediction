@@ -121,14 +121,14 @@ class MaritimeIMMFilter(TrajectoryBaseline):
 
                 if current_dim == CV_MODEL_DIM:  # CV model
                     # Map [x, vx, y, vy] to [x, vx, 0, y, vy, 0]
-                    model.kf.x[[0, 1, 3, 4]] = old_x
+                    model.kf.x[[0, 1, 3, 4]] = old_x.flatten()
                     model.kf.P[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_P
                     model.kf.F[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_F
                     model.kf.Q[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_Q
 
                 elif current_dim == CT_MODEL_DIM:  # CT model
                     # Map [x, vx, y, vy, ω] to [x, vx, 0, y, vy, 0] (ignore ω)
-                    model.kf.x[[0, 1, 3, 4]] = old_x[[0, 1, 2, 3]]
+                    model.kf.x[[0, 1, 3, 4]] = old_x.flatten()[[0, 1, 2, 3]]
                     model.kf.P[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_P[
                         np.ix_([0, 1, 2, 3], [0, 1, 2, 3])
                     ]
@@ -139,7 +139,8 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                         np.ix_([0, 1, 2, 3], [0, 1, 2, 3])
                     ]
 
-            # Update measurement matrix for new state dimension
+        # Update measurement matrix for all models regardless of whether they were expanded
+        for model in self.models:
             model.kf.H = np.zeros((2, target_dim))
             model.kf.H[0, 0] = 1.0  # x position
             model.kf.H[1, 3] = 1.0  # y position

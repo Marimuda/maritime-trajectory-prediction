@@ -176,8 +176,11 @@ class ConstantVelocityModel(BaseMotionModel, TrajectoryBaseline):
 
         # Use first sequence to set up coordinate transform
         first_sequence = sequences[0]
+        if first_sequence.size == 0:
+            raise ValueError("Cannot fit with empty sequence")
         MIN_COLUMNS_REQUIRED = 2
-        if first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
+        MIN_DIMENSIONS = 2
+        if len(first_sequence.shape) < MIN_DIMENSIONS or first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
             raise ValueError("Sequences must have at least 2 columns (lat, lon)")
 
         self.coordinate_transform.auto_set_reference(first_sequence[:, :2])
@@ -410,8 +413,11 @@ class CoordinatedTurnModel(BaseMotionModel, TrajectoryBaseline):
             raise ValueError("No sequences provided for fitting")
 
         first_sequence = sequences[0]
+        if first_sequence.size == 0:
+            raise ValueError("Cannot fit with empty sequence")
         MIN_COLUMNS_REQUIRED = 2
-        if first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
+        MIN_DIMENSIONS = 2
+        if len(first_sequence.shape) < MIN_DIMENSIONS or first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
             raise ValueError("Sequences must have at least 2 columns (lat, lon)")
 
         self.coordinate_transform.auto_set_reference(first_sequence[:, :2])
@@ -611,8 +617,11 @@ class NearlyConstantAccelModel(BaseMotionModel, TrajectoryBaseline):
             raise ValueError("No sequences provided for fitting")
 
         first_sequence = sequences[0]
+        if first_sequence.size == 0:
+            raise ValueError("Cannot fit with empty sequence")
         MIN_COLUMNS_REQUIRED = 2
-        if first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
+        MIN_DIMENSIONS = 2
+        if len(first_sequence.shape) < MIN_DIMENSIONS or first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
             raise ValueError("Sequences must have at least 2 columns (lat, lon)")
 
         self.coordinate_transform.auto_set_reference(first_sequence[:, :2])

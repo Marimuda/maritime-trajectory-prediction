@@ -16,6 +16,12 @@ from .models import (
     NearlyConstantAccelModel,
 )
 from .protocols import BaselineResult, TrajectoryBaseline
+from .lightning_adapter import (
+    create_imm_lightning,
+    create_cv_lightning,
+    create_ct_lightning,
+    create_nca_lightning,
+)
 
 __all__ = [
     "TrajectoryBaseline",
@@ -24,4 +30,8 @@ __all__ = [
     "CoordinatedTurnModel",
     "NearlyConstantAccelModel",
     "MaritimeIMMFilter",
+    "create_imm_lightning",
+    "create_cv_lightning",
+    "create_ct_lightning",
+    "create_nca_lightning",
 ]

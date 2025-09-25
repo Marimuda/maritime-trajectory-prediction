@@ -17,6 +17,19 @@ from .benchmark_models import LSTMModel, XGBoostModel
 from .motion_transformer import MotionTransformerLightning
 
 # Import your model classes
+from .baseline_models.kalman import (
+    MaritimeIMMFilter,
+    ConstantVelocityModel,
+    CoordinatedTurnModel,
+    NearlyConstantAccelModel
+)
+from .baseline_models.kalman.lightning_adapter import (
+    KalmanBaselineLightning,
+    create_imm_lightning,
+    create_cv_lightning,
+    create_ct_lightning,
+    create_nca_lightning
+)
 from .traisformer import TrAISformer
 
 logger = logging.getLogger(__name__)
@@ -58,6 +71,14 @@ def create_model(config: DictConfig | dict[str, Any]) -> pl.LightningModule:
         return XGBoostModel(config)
     elif model_type == "motion_transformer":
         return MotionTransformerLightning(config)
+    elif model_type in ["kalman", "imm", "kalman_imm", "maritime_imm"]:
+        return create_imm_lightning(config)
+    elif model_type in ["kalman_cv", "constant_velocity"]:
+        return create_cv_lightning(config)
+    elif model_type in ["kalman_ct", "coordinated_turn"]:
+        return create_ct_lightning(config)
+    elif model_type in ["kalman_nca", "nearly_constant_accel"]:
+        return create_nca_lightning(config)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -113,4 +134,12 @@ def get_model_class(model_type: str) -> Any:
         return XGBoostModel
     if mt == "motion_transformer":
         return MotionTransformerLightning
+    if mt in ["kalman", "imm", "kalman_imm", "maritime_imm"]:
+        return KalmanBaselineLightning
+    if mt in ["kalman_cv", "constant_velocity"]:
+        return KalmanBaselineLightning
+    if mt in ["kalman_ct", "coordinated_turn"]:
+        return KalmanBaselineLightning
+    if mt in ["kalman_nca", "nearly_constant_accel"]:
+        return KalmanBaselineLightning
     raise ValueError(f"Unknown model type: {model_type}")
