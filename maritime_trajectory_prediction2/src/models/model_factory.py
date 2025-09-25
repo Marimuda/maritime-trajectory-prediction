@@ -13,23 +13,17 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from .ais_fuser import AISFuserLightning
-from .benchmark_models import LSTMModel, XGBoostModel
-from .motion_transformer import MotionTransformerLightning
 
 # Import your model classes
-from .baseline_models.kalman import (
-    MaritimeIMMFilter,
-    ConstantVelocityModel,
-    CoordinatedTurnModel,
-    NearlyConstantAccelModel
-)
 from .baseline_models.kalman.lightning_adapter import (
     KalmanBaselineLightning,
-    create_imm_lightning,
-    create_cv_lightning,
     create_ct_lightning,
-    create_nca_lightning
+    create_cv_lightning,
+    create_imm_lightning,
+    create_nca_lightning,
 )
+from .benchmark_models import LSTMModel, XGBoostModel
+from .motion_transformer import MotionTransformerLightning
 from .traisformer import TrAISformer
 
 logger = logging.getLogger(__name__)
