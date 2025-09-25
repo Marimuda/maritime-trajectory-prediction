@@ -166,24 +166,25 @@ class BaseDatasetBuilder(abc.ABC):
                     continue
 
                 # Sort by time
-                vessel_df = vessel_df.sort_values("time")
+                sorted_df = vessel_df.sort_values("time")
 
                 # Check time span
-                time_span = vessel_df["time"].max() - vessel_df["time"].min()
-                if time_span.total_seconds() < 300:  # Less than 5 minutes
+                time_span = sorted_df["time"].max() - sorted_df["time"].min()
+                MIN_TIME_SPAN_SECONDS = 300  # 5 minutes minimum
+                if time_span.total_seconds() < MIN_TIME_SPAN_SECONDS:
                     self.logger.debug(
                         f"Skipping vessel {mmsi}: time span too short ({time_span})"
                     )
                     continue
 
                 # Set time as index for resampling
-                vessel_df = vessel_df.set_index("time")
+                indexed_df = sorted_df.set_index("time")
 
                 # Resample to 1-minute intervals with forward fill
-                resampled = vessel_df.resample("1min").first()
+                resampled = indexed_df.resample("1min").first()
 
                 # Forward fill missing values
-                resampled = resampled.fillna(method="ffill")
+                resampled = resampled.ffill()
 
                 # Drop rows with remaining NaN values
                 resampled = resampled.dropna()

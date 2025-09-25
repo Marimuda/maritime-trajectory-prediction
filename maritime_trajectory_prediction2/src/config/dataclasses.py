@@ -8,7 +8,7 @@ with validation and defaults using pydantic.
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ModeType(str, Enum):
@@ -111,7 +111,8 @@ class DataConfig(BaseModel):
     # Spatial bounds (optional)
     spatial_bounds: dict[str, float] | None = None
 
-    @validator("validation_split", "test_split")
+    @field_validator("validation_split", "test_split")
+    @classmethod
     def validate_split_range(cls, v):
         if not 0 <= v <= 1:
             raise ValueError("Split values must be between 0 and 1")
@@ -143,7 +144,8 @@ class ModelConfig(BaseModel):
     # Checkpoint path for loading
     checkpoint_path: str | None = None
 
-    @validator("dropout")
+    @field_validator("dropout")
+    @classmethod
     def validate_dropout(cls, v):
         if not 0 <= v <= 1:
             raise ValueError("Dropout must be between 0 and 1")
@@ -178,7 +180,8 @@ class TrainerConfig(BaseModel):
     check_val_every_n_epoch: int = 1
     val_check_interval: float | None = None
 
-    @validator("learning_rate", "weight_decay")
+    @field_validator("learning_rate", "weight_decay")
+    @classmethod
     def validate_positive(cls, v):
         if v <= 0:
             raise ValueError("Learning rate and weight decay must be positive")
@@ -373,9 +376,8 @@ class RootConfig(BaseModel):
     hydra_run_dir: str = "outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
     hydra_sweep_dir: str = "multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
 
-    class Config:
-        """Pydantic configuration."""
-
-        extra = "forbid"  # Prevent additional fields
-        validate_assignment = True
-        use_enum_values = True
+    model_config = ConfigDict(
+        extra="forbid",  # Prevent additional fields
+        validate_assignment=True,
+        use_enum_values=True,
+    )
