@@ -27,7 +27,7 @@ MCNEMAR_EXACT_TEST_THRESHOLD = 25
 
 
 @dataclass
-class TestResult:
+class StatTestResult:
     """Result of statistical significance test."""
 
     test_name: str
@@ -45,7 +45,7 @@ def paired_t_test(
     group_b: np.ndarray,
     alpha: float = 0.05,
     alternative: str = "two-sided",
-) -> TestResult:
+) -> StatTestResult:
     """
     Paired t-test for comparing two related samples.
 
@@ -56,7 +56,7 @@ def paired_t_test(
         alternative: 'two-sided', 'less', or 'greater'
 
     Returns:
-        TestResult with test statistics and interpretation
+        StatTestResult with test statistics and interpretation
 
     Example:
         >>> model_a_scores = np.array([0.85, 0.87, 0.83, 0.89, 0.86])
@@ -90,7 +90,7 @@ def paired_t_test(
     else:
         effect_interpretation = "large"
 
-    return TestResult(
+    return StatTestResult(
         test_name="Paired t-test",
         statistic=statistic,
         p_value=p_value,
@@ -112,7 +112,7 @@ def wilcoxon_test(
     alpha: float = 0.05,
     alternative: str = "two-sided",
     zero_method: str = "wilcox",
-) -> TestResult:
+) -> StatTestResult:
     """
     Wilcoxon signed-rank test for comparing two related samples (non-parametric).
 
@@ -124,7 +124,7 @@ def wilcoxon_test(
         zero_method: Method for handling zero differences
 
     Returns:
-        TestResult with test statistics and interpretation
+        StatTestResult with test statistics and interpretation
     """
     if len(group_a) != len(group_b):
         raise ValueError("Groups must have equal length for Wilcoxon test")
@@ -136,7 +136,7 @@ def wilcoxon_test(
         )
     except ValueError as e:
         warnings.warn(f"Wilcoxon test failed: {e}", stacklevel=2)
-        return TestResult(
+        return StatTestResult(
             test_name="Wilcoxon signed-rank test",
             statistic=np.nan,
             p_value=np.nan,
@@ -168,7 +168,7 @@ def wilcoxon_test(
     else:
         effect_interpretation = None
 
-    return TestResult(
+    return StatTestResult(
         test_name="Wilcoxon signed-rank test",
         statistic=statistic,
         p_value=p_value,
@@ -184,7 +184,7 @@ def wilcoxon_test(
     )
 
 
-def cliffs_delta(group_a: np.ndarray, group_b: np.ndarray) -> TestResult:
+def cliffs_delta(group_a: np.ndarray, group_b: np.ndarray) -> StatTestResult:
     """
     Cliff's delta effect size measure for ordinal data.
 
@@ -193,7 +193,7 @@ def cliffs_delta(group_a: np.ndarray, group_b: np.ndarray) -> TestResult:
         group_b: Second group measurements
 
     Returns:
-        TestResult with Cliff's delta and interpretation
+        StatTestResult with Cliff's delta and interpretation
 
     Note:
         Cliff's delta ranges from -1 to 1:
@@ -226,7 +226,7 @@ def cliffs_delta(group_a: np.ndarray, group_b: np.ndarray) -> TestResult:
     else:
         interpretation = "large"
 
-    return TestResult(
+    return StatTestResult(
         test_name="Cliff's delta",
         statistic=delta,
         p_value=None,  # Cliff's delta is an effect size, not a test
@@ -236,7 +236,7 @@ def cliffs_delta(group_a: np.ndarray, group_b: np.ndarray) -> TestResult:
     )
 
 
-def mcnemar_test(contingency_table: np.ndarray, alpha: float = 0.05) -> TestResult:
+def mcnemar_test(contingency_table: np.ndarray, alpha: float = 0.05) -> StatTestResult:
     """
     McNemar test for comparing two classification models on the same dataset.
 
@@ -247,7 +247,7 @@ def mcnemar_test(contingency_table: np.ndarray, alpha: float = 0.05) -> TestResu
         alpha: Significance level
 
     Returns:
-        TestResult with McNemar test statistics
+        StatTestResult with McNemar test statistics
 
     Example:
         >>> # Model A vs Model B classification results
@@ -273,7 +273,7 @@ def mcnemar_test(contingency_table: np.ndarray, alpha: float = 0.05) -> TestResu
         p_value = 1 - stats.chi2.cdf(statistic, 1)
         test_type = "chi-square"
 
-    return TestResult(
+    return StatTestResult(
         test_name="McNemar test",
         statistic=statistic,
         p_value=p_value,

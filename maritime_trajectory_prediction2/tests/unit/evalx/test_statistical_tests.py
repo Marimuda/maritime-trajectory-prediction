@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from src.evalx.stats.tests import (
-    TestResult,
+    StatTestResult,
     cliffs_delta,
     mcnemar_test,
     paired_t_test,
@@ -22,7 +22,7 @@ class TestPairedTTest:
 
         result = paired_t_test(group_a, group_b)
 
-        assert isinstance(result, TestResult)
+        assert isinstance(result, StatTestResult)
         assert result.test_name == "Paired t-test"
         assert isinstance(result.statistic, float | np.floating)
         assert isinstance(result.p_value, float | np.floating)
@@ -98,7 +98,7 @@ class TestWilcoxonTest:
 
         result = wilcoxon_test(group_a, group_b)
 
-        assert isinstance(result, TestResult)
+        assert isinstance(result, StatTestResult)
         assert result.test_name == "Wilcoxon signed-rank test"
         assert isinstance(result.statistic, float | np.floating)
         assert isinstance(result.p_value, float | np.floating)
@@ -164,7 +164,7 @@ class TestCliffssDelta:
 
         result = cliffs_delta(group_a, group_b)
 
-        assert isinstance(result, TestResult)
+        assert isinstance(result, StatTestResult)
         assert result.test_name == "Cliff's delta"
         assert isinstance(result.statistic, float | np.floating)
         assert result.p_value is None  # Cliff's delta is not a significance test
@@ -240,7 +240,7 @@ class TestMcNemarTest:
 
         result = mcnemar_test(table)
 
-        assert isinstance(result, TestResult)
+        assert isinstance(result, StatTestResult)
         assert result.test_name == "McNemar test"
         assert isinstance(result.statistic, float | np.floating)
         assert isinstance(result.p_value, float | np.floating)

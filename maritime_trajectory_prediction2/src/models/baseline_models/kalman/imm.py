@@ -10,6 +10,7 @@ for maritime trajectories where vessels may exhibit different motion patterns
 from typing import Any
 
 import numpy as np
+from filterpy.common import Q_discrete_white_noise
 from filterpy.kalman import IMMEstimator
 
 from .coordinates import MaritimeCoordinateTransform
@@ -72,6 +73,9 @@ class MaritimeIMMFilter(TrajectoryBaseline):
             if kf is None:
                 raise RuntimeError(f"Model {i} ({self.model_names[i]}) not initialized")
 
+        # Align state vectors to common dimension before creating IMM
+        self._align_state_vectors()
+
         # Create IMM estimator
         self.imm = IMMEstimator(
             filters=filters,
@@ -109,26 +113,28 @@ class MaritimeIMMFilter(TrajectoryBaseline):
 
                 # Create new expanded matrices
                 model.kf.dim_x = target_dim
-                model.kf.x = np.zeros(target_dim)
+                model.kf.x = np.zeros((target_dim, 1))  # Keep column vector format
                 model.kf.P = (
                     np.eye(target_dim) * 1e6
                 )  # Large uncertainty for new states
                 model.kf.F = np.eye(target_dim)
                 model.kf.Q = np.eye(target_dim) * 1e-6
+                # Update internal identity matrix
+                model.kf._I = np.eye(target_dim)
 
                 CV_MODEL_DIM = 4
                 CT_MODEL_DIM = 5
 
                 if current_dim == CV_MODEL_DIM:  # CV model
                     # Map [x, vx, y, vy] to [x, vx, 0, y, vy, 0]
-                    model.kf.x[[0, 1, 3, 4]] = old_x.flatten()
+                    model.kf.x[[0, 1, 3, 4], 0] = old_x.flatten()
                     model.kf.P[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_P
                     model.kf.F[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_F
                     model.kf.Q[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_Q
 
                 elif current_dim == CT_MODEL_DIM:  # CT model
                     # Map [x, vx, y, vy, ω] to [x, vx, 0, y, vy, 0] (ignore ω)
-                    model.kf.x[[0, 1, 3, 4]] = old_x.flatten()[[0, 1, 2, 3]]
+                    model.kf.x[[0, 1, 3, 4], 0] = old_x.flatten()[[0, 1, 2, 3]]
                     model.kf.P[np.ix_([0, 1, 3, 4], [0, 1, 3, 4])] = old_P[
                         np.ix_([0, 1, 2, 3], [0, 1, 2, 3])
                     ]
@@ -144,6 +150,58 @@ class MaritimeIMMFilter(TrajectoryBaseline):
             model.kf.H = np.zeros((2, target_dim))
             model.kf.H[0, 0] = 1.0  # x position
             model.kf.H[1, 3] = 1.0  # y position
+            # Ensure internal identity matrix is correct for all models
+            if not hasattr(model.kf, "_I") or model.kf._I.shape[0] != target_dim:
+                model.kf._I = np.eye(target_dim)
+
+    def _update_aligned_process_noise(self, dt: float):
+        """Update process noise for aligned 6D models."""
+        for model in self.models:
+            if isinstance(model, ConstantVelocityModel):
+                # CV: Only position and velocity noise, no acceleration
+                q_vel = model.config.velocity_process_noise**2
+                q_block = Q_discrete_white_noise(2, dt, q_vel)  # [pos, vel] block
+
+                # Build 6D Q matrix: [x, vx, ax, y, vy, ay]
+                Q_6d = np.zeros((6, 6))
+                # X direction: [x, vx] at indices [0, 1]
+                Q_6d[np.ix_([0, 1], [0, 1])] = q_block
+                # Y direction: [y, vy] at indices [3, 4]
+                Q_6d[np.ix_([3, 4], [3, 4])] = q_block
+                # Small noise for acceleration states [2, 5]
+                Q_6d[2, 2] = 1e-8  # ax
+                Q_6d[5, 5] = 1e-8  # ay
+
+                model.kf.Q = Q_6d
+
+            elif isinstance(model, CoordinatedTurnModel):
+                # CT: Position and velocity noise, ignore turn rate for 6D
+                q_pos = model.config.position_process_noise**2
+                q_vel = model.config.velocity_process_noise**2
+
+                Q_6d = np.zeros((6, 6))
+                Q_6d[0, 0] = q_pos * dt**2  # x position
+                Q_6d[1, 1] = q_vel * dt  # x velocity
+                Q_6d[2, 2] = 1e-8  # x acceleration (small)
+                Q_6d[3, 3] = q_pos * dt**2  # y position
+                Q_6d[4, 4] = q_vel * dt  # y velocity
+                Q_6d[5, 5] = 1e-8  # y acceleration (small)
+
+                model.kf.Q = Q_6d
+
+            elif isinstance(model, NearlyConstantAccelModel):
+                # NCA: Full position-velocity-acceleration noise
+                q_acc = model.config.acceleration_process_noise**2
+                q_block = Q_discrete_white_noise(3, dt, q_acc)  # [pos, vel, acc] block
+
+                # Build 6D Q matrix
+                Q_6d = np.zeros((6, 6))
+                # X direction: [x, vx, ax] at indices [0, 1, 2]
+                Q_6d[np.ix_([0, 1, 2], [0, 1, 2])] = q_block
+                # Y direction: [y, vy, ay] at indices [3, 4, 5]
+                Q_6d[np.ix_([3, 4, 5], [3, 4, 5])] = q_block
+
+                model.kf.Q = Q_6d
 
     def _extract_model_predictions(
         self, horizon: int, prediction_dt: float
@@ -176,7 +234,8 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                     model._update_transition_matrix(prediction_dt)
 
                 # Update process noise
-                model._update_process_noise(prediction_dt)
+                # Use aligned process noise update
+                self._update_aligned_process_noise(prediction_dt)
 
                 # Predict
                 model_kf.predict()
@@ -213,8 +272,15 @@ class MaritimeIMMFilter(TrajectoryBaseline):
 
         # Use first sequence to set up coordinate transform
         first_sequence = sequences[0]
+        if len(first_sequence) == 0:
+            raise ValueError("Cannot fit on empty sequence")
+
         MIN_COLUMNS_REQUIRED = 2
-        if first_sequence.shape[1] < MIN_COLUMNS_REQUIRED:
+        MIN_DIMENSIONS = 2
+        if (
+            len(first_sequence.shape) < MIN_DIMENSIONS
+            or first_sequence.shape[1] < MIN_COLUMNS_REQUIRED
+        ):
             raise ValueError("Sequences must have at least 2 columns (lat, lon)")
 
         # Set up coordinate transform
@@ -289,12 +355,12 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                     # Map to 6D state: [x, vx, ax, y, vy, ay]
                     model.kf.x = np.array(
                         [
-                            local_positions[-1, 0],
-                            vel_x,
-                            0,
-                            local_positions[-1, 1],
-                            vel_y,
-                            0,
+                            [local_positions[-1, 0]],
+                            [vel_x],
+                            [0],
+                            [local_positions[-1, 1]],
+                            [vel_y],
+                            [0],
                         ]
                     )
 
@@ -320,12 +386,12 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                     # Map to 6D state
                     model.kf.x = np.array(
                         [
-                            local_positions[-1, 0],
-                            velocities[-1, 0],
-                            0,
-                            local_positions[-1, 1],
-                            velocities[-1, 1],
-                            0,
+                            [local_positions[-1, 0]],
+                            [velocities[-1, 0]],
+                            [0],
+                            [local_positions[-1, 1]],
+                            [velocities[-1, 1]],
+                            [0],
                         ]
                     )
 
@@ -353,12 +419,12 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                     # Full 6D state
                     model.kf.x = np.array(
                         [
-                            local_positions[-1, 0],
-                            velocities[-1, 0],
-                            initial_accel[0],
-                            local_positions[-1, 1],
-                            velocities[-1, 1],
-                            initial_accel[1],
+                            [local_positions[-1, 0]],
+                            [velocities[-1, 0]],
+                            [initial_accel[0]],
+                            [local_positions[-1, 1]],
+                            [velocities[-1, 1]],
+                            [initial_accel[1]],
                         ]
                     )
 
@@ -383,7 +449,8 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                 elif isinstance(model, NearlyConstantAccelModel):
                     model._update_transition_matrix(dt)
 
-                model._update_process_noise(dt)
+            # Use aligned process noise update
+            self._update_aligned_process_noise(dt)
 
             # Run IMM predict-update cycle
             self.imm.predict()
@@ -409,7 +476,8 @@ class MaritimeIMMFilter(TrajectoryBaseline):
                 elif isinstance(model, NearlyConstantAccelModel):
                     model._update_transition_matrix(prediction_dt)
 
-                model._update_process_noise(prediction_dt)
+            # Use aligned process noise update
+            self._update_aligned_process_noise(prediction_dt)
 
             # IMM predict step
             self.imm.predict()
