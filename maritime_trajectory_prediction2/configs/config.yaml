@@ -1,0 +1,38 @@
+defaults:
+  # Order: group defaults first, then _self_
+  - mode: train
+  - data: ais_processed
+  - model: traisformer
+  - trainer: gpu
+  - callbacks: default
+  - logger: wandb
+  - experiment: base
+  - _self_
+
+# Reproducibility
+seed: 42
+
+# Data paths (fail early if env var missing)
+data_dir: ${env:MARITIME_DATA_DIR}        # expects MARITIME_DATA_DIR
+output_dir: ${env:MARITIME_OUTPUT_DIR}    # expects MARITIME_OUTPUT_DIR
+
+# Hyperparameters (override via CLI or sweeps)
+learning_rate: 1e-4
+weight_decay: 0.01
+optimizer:
+  name: adam
+  params: {}
+scheduler:
+  name: null
+  params: {}
+
+# Naming and tracking
+project_name: maritime_trajectory_prediction
+# Construct run name from model + timestamp or unique ID
+# e.g. "traisformer_20250617-1530"
+experiment_name: "${model.name}_${now:%Y%m%d-%H%M}"
+
+# WandB settings (only used if logger=wandb)
+wandb:
+  project: ${project_name}
+  entity: your_wandb_entity_here  # optional

@@ -1,0 +1,22 @@
+defaults:
+  - data=ais_processed
+  - model=traisformer
+  - trainer=gpu
+  - callbacks=default
+  - logger=wandb
+  - _self_
+
+# Reproducibility
+seed: 42
+
+# Naming
+# Combines model name with timestamp for uniqueness
+experiment_name: "${model.name}_${now:%Y%m%d-%H%M%S}"
+
+# Paths (override via env or CLI)
+data_dir: ${env:MARITIME_DATA_DIR, data}
+output_dir: ${env:MARITIME_OUTPUT_DIR, outputs}/${experiment_name}
+
+# (Optional) expose common hyperparameters
+learning_rate: 1e-4
+weight_decay: 0.0

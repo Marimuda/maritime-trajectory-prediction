@@ -1,0 +1,36 @@
+# @package _global_
+# Configuration for benchmark mode
+
+mode: benchmark
+
+# Benchmark specific settings
+benchmark:
+  output_dir: ${hydra:runtime.output_dir}/benchmarks
+  num_runs: 100  # Number of benchmark runs for performance testing
+
+  # Model configurations for testing
+  models:
+    trajectory_prediction:
+      input_dim: 13
+      hidden_dim: 64
+      num_layers: 2
+      output_dim: 4
+    anomaly_detection:
+      input_dim: 13
+      encoding_dim: 32
+      hidden_dims: [64, 48]
+    vessel_interaction:
+      node_features: 10
+      edge_features: 5
+      hidden_dim: 64
+      num_layers: 2
+      num_nodes: 6
+
+# Training pipeline test settings
+training:
+  learning_rate: 0.01
+  batch_size: 2
+  sequence_length: 5
+
+# Enable debug logging for detailed output
+debug: true

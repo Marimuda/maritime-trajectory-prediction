@@ -1,0 +1,19 @@
+# @package _global_
+# Configuration for preprocessing mode
+
+mode: preprocess
+
+# Preprocessing specific settings
+preprocess:
+  input_dir: ${data_dir}/raw
+  output_dir: ${data_dir}/processed
+  batch_size: 1000
+  sequence_length: 30
+  prediction_horizon: 12
+  min_trajectory_length: 50
+  max_trajectory_length: 1000
+  feature_engineering: true
+  normalize_features: true
+  save_statistics: true
+  parallel_processing: true
+  num_workers: 4

@@ -1,0 +1,25 @@
+# Configuration for TrAISformer model
+
+# Model metadata
+name: traisformer
+type: traisformer
+task: trajectory_prediction
+checkpoint_path: null  # Set at runtime
+
+# Model architecture
+_target_: src.models.traisformer.TrAISformer
+d_model: 768
+nhead: 8
+num_layers: 8
+dim_feedforward: 2048
+dropout: 0.1
+
+# Feature discretization
+lat_bins: 250
+lon_bins: 270
+sog_bins: 30
+cog_bins: 72
+
+# Model-specific features
+supports_anomaly_detection: false
+supports_uncertainty: true

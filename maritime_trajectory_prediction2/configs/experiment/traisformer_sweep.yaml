@@ -1,0 +1,34 @@
+defaults:
+  - experiment/base          # inherits logging, trainer, data, etc.
+  - model: traisformer       # selects your model config
+  - hydra/sweeper: optuna    # picks Optuna as the sweeper
+  - _self_
+
+hydra:
+  sweep:
+    dir: multirun/${hydra.job.name}/${hydra.job.num}/
+  sweeper:
+    _target_: optuna.integration.OptunaSweeper
+    study_name: ${experiment.name}_optuna
+    direction: minimize
+    n_trials: 30
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${seed}
+
+# Sweep parameters
+# Use fully qualified names so overrides work out-of-the-box
+# choice() and uniform() both map to Optuna’s APIs.
+params:
+  # transformer architecture
+  model:
+    d_model:         choice(256, 512, 768)
+    nhead:           choice(4, 8, 12)
+    num_layers:      choice(4, 6, 8)
+    dim_feedforward: choice(1024, 2048, 4096)
+    dropout:         uniform(0.0, 0.5)
+
+  # optimizer hyperparameters
+  optimizer:
+    lr:           loguniform(1e-5, 1e-3)
+    weight_decay: loguniform(1e-6, 1e-3)

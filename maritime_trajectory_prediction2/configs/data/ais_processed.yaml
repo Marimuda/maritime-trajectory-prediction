@@ -1,0 +1,39 @@
+# DataModule instantiation
+_target_: src.data.datamodule.AISFuserDataModule
+
+# I/O paths (inherited from top‐level `data_dir`)
+processed_dir: ${data_dir}/processed
+raw_dir:       ${data_dir}/raw
+
+# Loading parameters
+batch_size:    128
+# Instead of hard‐coding 124, let the user override via env var or CLI:
+num_workers:   ${env:NUM_WORKERS, ${hydra:job.num_workers, 16}}
+pin_memory:    true
+
+# Sequence lengths
+sequence_length:     30
+prediction_horizon:  12
+
+# Split ratios as a group
+splits:
+  validation: 0.2
+  test:       0.1
+
+# Feature & target configuration
+features:
+  columns:
+    - lat
+    - lon
+    - sog
+    - cog
+  normalize:  true
+  filter_outliers: true
+  min_trajectory_length: 50
+
+targets:
+  columns:
+    - lat
+    - lon
+    - sog
+    - cog

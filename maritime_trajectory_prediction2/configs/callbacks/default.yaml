@@ -1,0 +1,19 @@
+# Default callbacks configuration
+
+# Early stopping
+early_stopping: true
+monitor: val/loss
+patience: 15
+mode: min
+
+# Model checkpointing
+checkpoint_dir: ${output_dir}/checkpoints
+save_top_k: 3
+save_last: true
+
+# Learning rate monitoring
+lr_logging_interval: epoch
+
+# Additional monitoring
+device_stats: true
+rich_progress: true

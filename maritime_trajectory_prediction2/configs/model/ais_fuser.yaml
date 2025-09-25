@@ -1,0 +1,34 @@
+# Configuration for AISFuser model
+
+# Model metadata
+name: ais_fuser
+type: ais_fuser
+task: vessel_interaction
+checkpoint_path: null
+
+# Model architecture
+_target_: src.models.ais_fuser.AISFuserLightning
+
+# Graph processing
+graph:
+  polyline_dim: 256
+  cluster_eps: 0.015
+
+# Transformer architecture
+transformer:
+  d_model: 512
+  nhead: 8
+  num_layers: 6
+
+# Training settings
+ssl_beta: 0.3
+weather_dim: 64
+num_classes: 9
+
+# Model-specific features
+input_dim: 4
+output_dim: 9
+sequence_length: 30
+prediction_horizon: 12
+supports_anomaly_detection: true
+supports_uncertainty: false

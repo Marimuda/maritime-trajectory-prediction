@@ -1,0 +1,10 @@
+defaults:
+  - trainer: base
+
+trainer:
+  accelerator: gpu
+  devices: 1
+  precision: 16-mixed
+  deterministic: false       # you can trade reproducibility for speed
+  benchmark: true
+  compile: false

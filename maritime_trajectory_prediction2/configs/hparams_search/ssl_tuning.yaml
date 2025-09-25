@@ -1,0 +1,13 @@
+# SSL (Self-Supervised Learning) hyperparameter tuning
+params:
+  # SSL-specific parameters
+  model.ssl_beta: interval(0.1, 0.5)
+  model.ssl_temperature: interval(0.01, 0.1)
+
+  # Weather fusion parameters
+  model.weather_dim: choice(32, 64, 128)
+  model.fusion_method: choice(concat, attention, cross_attention)
+
+  # General parameters
+  model.optimizer.lr: interval(1e-5, 1e-3)
+  model.optimizer.weight_decay: interval(1e-6, 1e-3)

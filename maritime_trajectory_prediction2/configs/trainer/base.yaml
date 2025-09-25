@@ -1,0 +1,24 @@
+trainer:
+  # hardware & precision — leave “auto” in base, override only accelerator/devices in gpu/cpu
+  accelerator: auto
+  devices: auto
+  precision: 32               # default full-precision
+  strategy: auto
+  profiler: simple
+  # reproducibility vs speed
+  deterministic: true
+  benchmark: false
+
+  # training loop
+  max_epochs: 100
+  log_every_n_steps: 50
+  check_val_every_n_epoch: 1
+
+  # gradient clipping
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+
+  # checkpoint & resume
+  default_root_dir: ${hydra:runtime.cwd}/checkpoints
+  enable_checkpointing: true
+  resume_from_checkpoint: null

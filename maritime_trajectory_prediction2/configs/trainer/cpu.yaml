@@ -1,0 +1,7 @@
+defaults:
+  - trainer: base
+
+trainer:
+  accelerator: cpu
+  devices: 1
+  precision: 32

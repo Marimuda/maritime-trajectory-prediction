@@ -1,0 +1,10 @@
+# configs/model/baseline_trajectory.yaml
+_target_: src.models.baseline.TrajectoryBaseline
+model:
+  type: baseline_trajectory
+  input_dim: 4
+  hidden_dim: 128
+  num_layers: 2
+  output_dim: 4
+  dropout: 0.2
+  bidirectional: true

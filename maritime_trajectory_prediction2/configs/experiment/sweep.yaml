@@ -1,0 +1,23 @@
+defaults:
+  - experiment/base           # inherit data, model, trainer, callbacks, logger
+  - hydra/sweeper=optuna      # select Optuna as the sweeper
+  - _self_
+
+hydra:
+  sweep:
+    dir: multirun/${experiment_name}/${hydra.job.num}
+  sweeper:
+    _target_: optuna.integration.OptunaSweeper
+    study_name: ${experiment_name}_optuna
+    direction: minimize
+    n_trials: 30
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${seed}
+
+# Sweep parameters
+params:
+  model:
+    learning_rate: loguniform(1e-5, 1e-3)
+    weight_decay:  loguniform(1e-6, 1e-3)
+    dropout:       uniform(0.0, 0.5)

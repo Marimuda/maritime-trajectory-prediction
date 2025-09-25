@@ -1,0 +1,33 @@
+defaults:
+  - experiment/base        # inherit data, model placeholders, trainer, logger, callbacks
+  - model=ais_fuser        # select the AISFuser model config
+  - hydra/sweeper=optuna    # pick OptunaSweeper
+  - _self_
+
+hydra:
+  sweep:
+    # where multirun outputs go
+    dir: multirun/${experiment_name}/${hydra.job.num}
+  sweeper:
+    _target_: optuna.integration.OptunaSweeper
+    study_name: ${experiment_name}_optuna
+    direction: minimize
+    n_trials: 50
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: ${seed}
+
+# Sweep parameters
+params:
+  model:
+    transformer:
+      d_model:         choice(256, 512, 768)
+      nhead:           choice(4, 8, 12)
+      num_layers:      choice(4, 6, 8)
+    graph:
+      polyline_dim:    choice(128, 256, 384)
+    ssl_beta:          uniform(0.1, 0.5)
+
+  optimizer:
+    lr:           loguniform(1e-5, 1e-3)
+    weight_decay: loguniform(1e-4, 1e-2)

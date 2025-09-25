@@ -1,0 +1,10 @@
+# TensorBoard logger configuration
+
+type: tensorboard
+name: ${name}
+save_dir: ${output_dir}/logs
+version: null
+
+# TensorBoard specific settings
+tb_default_hp_metric: false
+log_graph: true
