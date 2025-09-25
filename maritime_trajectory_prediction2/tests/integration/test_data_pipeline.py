@@ -42,8 +42,8 @@ class TestAISDataPipeline:
             # Verify basic processing
             assert len(df) == 4  # 4 valid AIS messages, 1 engine chatter filtered
             assert "mmsi" in df.columns
-            assert "latitude" in df.columns
-            assert "longitude" in df.columns
+            assert "lat" in df.columns
+            assert "lon" in df.columns
             assert "time" in df.columns
             assert "msg_class" in df.columns
 
@@ -67,10 +67,10 @@ class TestAISDataPipeline:
                     curr_row = position_data.iloc[i]
 
                     distance = MaritimeUtils.calculate_distance(
-                        prev_row["latitude"],
-                        prev_row["longitude"],
-                        curr_row["latitude"],
-                        curr_row["longitude"],
+                        prev_row["lat"],
+                        prev_row["lon"],
+                        curr_row["lat"],
+                        curr_row["lon"],
                     )
 
                     assert isinstance(distance, (float, type(np.nan)))
@@ -151,16 +151,16 @@ class TestAISDataPipeline:
         assert len(cleaned_df) <= len(df)
 
         # Verify coordinate ranges
-        if "latitude" in cleaned_df.columns and not cleaned_df["latitude"].isna().all():
-            lat_range = cleaned_df["latitude"].dropna()
+        if "lat" in cleaned_df.columns and not cleaned_df["lat"].isna().all():
+            lat_range = cleaned_df["lat"].dropna()
             assert lat_range.min() >= -90
             assert lat_range.max() <= 90
 
         if (
-            "longitude" in cleaned_df.columns
-            and not cleaned_df["longitude"].isna().all()
+            "lon" in cleaned_df.columns
+            and not cleaned_df["lon"].isna().all()
         ):
-            lon_range = cleaned_df["longitude"].dropna()
+            lon_range = cleaned_df["lon"].dropna()
             assert lon_range.min() >= -180
             assert lon_range.max() <= 180
 
@@ -209,13 +209,13 @@ Invalid line without timestamp
             cleaned_df = processor.clean_ais_data(df)
 
             # Verify no invalid coordinates remain
-            if "latitude" in cleaned_df.columns:
-                valid_lats = cleaned_df["latitude"].dropna()
+            if "lat" in cleaned_df.columns:
+                valid_lats = cleaned_df["lat"].dropna()
                 if len(valid_lats) > 0:
                     assert valid_lats.between(-90, 90).all()
 
-            if "longitude" in cleaned_df.columns:
-                valid_lons = cleaned_df["longitude"].dropna()
+            if "lon" in cleaned_df.columns:
+                valid_lons = cleaned_df["lon"].dropna()
                 if len(valid_lons) > 0:
                     assert valid_lons.between(-180, 180).all()
 
@@ -279,14 +279,14 @@ class TestDataQualityAssurance:
             if should_be_valid:
                 assert result is not None
                 if lat == 91.0 or lat > 90:
-                    assert pd.isna(result["latitude"])
+                    assert pd.isna(result["lat"])
                 else:
-                    assert result["latitude"] == lat
+                    assert result["lat"] == lat
 
                 if lon == 181.0 or abs(lon) > 180:
-                    assert pd.isna(result["longitude"])
+                    assert pd.isna(result["lon"])
                 else:
-                    assert result["longitude"] == lon
+                    assert result["lon"] == lon
             # Note: Invalid coordinates are converted to NaN, not rejected entirely
 
     def test_mmsi_validation_comprehensive(self):
