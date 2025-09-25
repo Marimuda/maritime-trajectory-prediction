@@ -41,11 +41,12 @@ class MultiHeadAttention(nn.Module):
         self.head_dim = head_dim
 
     def forward(self, q, k, v, mask=None):
-        B, T, _ = q.size()
+        B, Tq, _ = q.size()
+        _, Tkv, _ = k.size()  # k and v should have same sequence length
         # project
-        q = self.q_proj(q).view(B, T, self.nhead, self.head_dim).transpose(1, 2)
-        k = self.k_proj(k).view(B, T, self.nhead, self.head_dim).transpose(1, 2)
-        v = self.v_proj(v).view(B, T, self.nhead, self.head_dim).transpose(1, 2)
+        q = self.q_proj(q).view(B, Tq, self.nhead, self.head_dim).transpose(1, 2)
+        k = self.k_proj(k).view(B, Tkv, self.nhead, self.head_dim).transpose(1, 2)
+        v = self.v_proj(v).view(B, Tkv, self.nhead, self.head_dim).transpose(1, 2)
         # score
         scores = (q @ k.transpose(-2, -1)) / self.scale
         if mask is not None:
@@ -53,7 +54,7 @@ class MultiHeadAttention(nn.Module):
         weights = F.softmax(scores, dim=-1)
         weights = self.dropout(weights)
         # attend
-        out = (weights @ v).transpose(1, 2).contiguous().view(B, T, -1)
+        out = (weights @ v).transpose(1, 2).contiguous().view(B, Tq, -1)
         return self.out_proj(out)
 
 

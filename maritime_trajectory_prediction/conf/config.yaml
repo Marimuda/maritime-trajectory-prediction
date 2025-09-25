@@ -1,0 +1,24 @@
+data:
+  paths:
+    - data/raw/ais_data.parquet
+  history: 20
+  horizon: 5
+  freq: '1min'
+  scalers:
+    _target_: builtins.dict
+    lat: ${scalers.standard}
+    lon: ${scalers.standard}
+    sog: ${scalers.standard}
+    cog: ${scalers.standard}
+    heading: ${scalers.standard}
+    vx: ${scalers.standard}
+    vy: ${scalers.standard}
+  batch_size: 512
+  num_workers: 16
+  val_split: 0.2
+  test_split: 0.1
+  seed: 42
+
+scalers:
+  standard:
+    _target_: sklearn.preprocessing.StandardScaler

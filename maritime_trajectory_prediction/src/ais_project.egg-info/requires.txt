@@ -1,0 +1,6 @@
+pandas
+torch
+pytorch-lightning
+hydra-core
+omegaconf
+scikit-learn

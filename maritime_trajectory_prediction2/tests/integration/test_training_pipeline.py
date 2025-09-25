@@ -91,12 +91,12 @@ class TestTrainingPipeline:
 
         # Check batch structure
         assert isinstance(batch, dict)
-        assert "input" in batch
-        assert "target" in batch
+        assert "inputs" in batch
+        assert "targets" in batch
 
         # Check tensor shapes
-        input_tensor = batch["input"]
-        target_tensor = batch["target"]
+        input_tensor = batch["inputs"]
+        target_tensor = batch["targets"]
 
         assert isinstance(input_tensor, torch.Tensor)
         assert isinstance(target_tensor, torch.Tensor)
@@ -133,8 +133,8 @@ class TestTrainingPipeline:
         batch = next(iter(train_loader))
 
         # Get actual dimensions from data
-        input_dim = batch["input"].shape[-1]
-        prediction_horizon = batch["target"].shape[1]  # Get from actual data
+        input_dim = batch["inputs"].shape[-1]
+        prediction_horizon = batch["targets"].shape[1]  # Get from actual data
 
         # Create model with correct dimensions
         from src.models.motion_transformer import (
@@ -151,8 +151,8 @@ class TestTrainingPipeline:
 
         # Test forward pass
         with torch.no_grad():
-            input_tensor = batch["input"]
-            target_tensor = batch["target"]
+            input_tensor = batch["inputs"]
+            target_tensor = batch["targets"]
 
             # Forward pass should not error
             outputs = model(input_tensor)
@@ -171,7 +171,10 @@ class TestTrainingPipeline:
             assert output_dim == 4  # lat, lon, sog, cog
             assert confidences.shape == (batch_size, n_queries)
 
-            print(f"Model input_dim: {model.input_dim}")
+            # Validate output shapes match target expectations
+            assert trajectories.shape[-1] == target_tensor.shape[-1], "Output and target feature dimensions must match"
+            assert trajectories.shape[1] == target_tensor.shape[1], "Output and target prediction horizons must match"
+
             print(f"Trajectories shape: {trajectories.shape}")
             print(f"Confidences shape: {confidences.shape}")
 
@@ -190,8 +193,8 @@ class TestTrainingPipeline:
         batch = next(iter(train_loader))
 
         # Get actual dimensions from data
-        input_dim = batch["input"].shape[-1]
-        prediction_horizon = batch["target"].shape[1]
+        input_dim = batch["inputs"].shape[-1]
+        prediction_horizon = batch["targets"].shape[1]
 
         # Create model
         from src.models.motion_transformer import (
@@ -206,8 +209,8 @@ class TestTrainingPipeline:
 
         model.train()
 
-        input_tensor = batch["input"]
-        target_tensor = batch["target"]
+        input_tensor = batch["inputs"]
+        target_tensor = batch["targets"]
 
         # Forward pass
         outputs = model(input_tensor)
@@ -241,8 +244,8 @@ class TestTrainingPipeline:
         batch = next(iter(datamodule.train_dataloader()))
 
         # Print actual tensor statistics
-        input_tensor = batch["input"]
-        target_tensor = batch["target"]
+        input_tensor = batch["inputs"]
+        target_tensor = batch["targets"]
 
         print(f"Input tensor - shape: {input_tensor.shape}")
         print(

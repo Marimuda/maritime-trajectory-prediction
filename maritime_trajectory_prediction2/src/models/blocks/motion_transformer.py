@@ -237,7 +237,9 @@ class MotionTransformer(nn.Module):
         # expand targets
         targ = targets.unsqueeze(2).expand(-1, -1, Q, -1)
         if loss_type == "best_of_n":
-            errs = F.mse_loss(trajs, targ, reduction="none").mean(dim=-1)  # [B, Q]
+            errs = F.mse_loss(trajs, targ, reduction="none").mean(
+                dim=(-2, -1)
+            )  # [B, Q]
             best_errs, idx = errs.min(dim=-1)
             reg_loss = best_errs.mean()
             cls_loss = F.cross_entropy(conf, idx)
