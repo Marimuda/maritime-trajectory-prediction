@@ -155,6 +155,79 @@ class MotionTransformerTrainer:
 
         return loss.item()
 
+    def train_step(
+        self, context: torch.Tensor, targets: torch.Tensor
+    ) -> dict[str, float]:
+        """Training step matching test interface expectations."""
+        self.model.train()
+        self.optimizer.zero_grad()
+
+        context = context.to(self.device)
+        targets = targets.to(self.device)
+
+        outputs = self.model(context)
+        loss_dict = self.model.compute_loss(outputs, targets, "best_of_n")
+
+        loss = loss_dict["total_loss"]
+        loss.backward()
+        self.optimizer.step()
+
+        # Convert tensor values to float for test compatibility
+        result = {}
+        for k, v in loss_dict.items():
+            if hasattr(v, "item"):
+                if v.numel() == 1:  # Scalar tensor
+                    result[k] = v.item()
+                else:  # Multi-element tensor - take mean
+                    result[k] = v.mean().item()
+            else:
+                result[k] = float(v)
+        return result
+
+    def validate_step(
+        self, context: torch.Tensor, targets: torch.Tensor
+    ) -> dict[str, float]:
+        """Validation step matching test interface expectations."""
+        self.model.eval()
+
+        with torch.no_grad():
+            context = context.to(self.device)
+            targets = targets.to(self.device)
+
+            outputs = self.model(context)
+            loss_dict = self.model.compute_loss(outputs, targets, "best_of_n")
+
+            # Compute additional validation metrics (ADE/FDE)
+            best_traj = self.model.predict_best_trajectory(context)
+            import torch.nn.functional as F
+
+            ade = (
+                F.mse_loss(best_traj, targets, reduction="none")
+                .mean(dim=-1)
+                .sqrt()
+                .mean()
+            )
+            fde = (
+                F.mse_loss(best_traj[:, -1], targets[:, -1], reduction="none")
+                .sqrt()
+                .mean()
+            )
+
+            # Add validation metrics to loss dict
+            val_dict = {}
+            for k, v in loss_dict.items():
+                if hasattr(v, "item"):
+                    if v.numel() == 1:  # Scalar tensor
+                        val_dict[k] = v.item()
+                    else:  # Multi-element tensor - take mean
+                        val_dict[k] = v.mean().item()
+                else:
+                    val_dict[k] = float(v)
+
+            val_dict.update({"val_ade": ade.item(), "val_fde": fde.item()})
+
+            return val_dict
+
 
 # Maritime-specific configurations following existing pattern
 MARITIME_MTR_CONFIG = {

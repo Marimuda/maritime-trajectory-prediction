@@ -136,11 +136,10 @@ class MotionDecoder(nn.Module):
             nn.Linear(d_model // 2, output_dim),
         )
         self.conf_head = nn.Sequential(
-            nn.Linear(d_model, d_model // 4),
+            nn.Linear(d_model * n_queries, d_model // 2),  # Take all queries as input
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model // 4, 1),
-            nn.Sigmoid(),
+            nn.Linear(d_model // 2, n_queries),  # Output logits for each query
         )
         self.dropout = nn.Dropout(dropout)
 
@@ -164,10 +163,17 @@ class MotionDecoder(nn.Module):
         x = x.view(B, self.prediction_horizon, self.n_queries, self.d_model)
         # compute outputs
         trajectories = self.traj_head(x)
-        confidences = self.conf_head(x.mean(dim=1)).squeeze(-1)
+        # Flatten query features for confidence head: [B, Q*D]
+        query_features_flat = x.mean(dim=1).flatten(
+            1
+        )  # [B, n_queries, d_model] -> [B, n_queries*d_model]
+        confidences = self.conf_head(
+            query_features_flat
+        )  # [B, n_queries] - classification logits
         return {
             "trajectories": trajectories,
             "confidences": confidences,
+            "context_features": context,  # Add missing context_features
             "query_features": x,
         }
 
@@ -238,8 +244,8 @@ class MotionTransformer(nn.Module):
         targ = targets.unsqueeze(2).expand(-1, -1, Q, -1)
         if loss_type == "best_of_n":
             errs = F.mse_loss(trajs, targ, reduction="none").mean(
-                dim=(-2, -1)
-            )  # [B, Q]
+                dim=(1, 3)
+            )  # [B, Q] - average over horizon and feature dims
             best_errs, idx = errs.min(dim=-1)
             reg_loss = best_errs.mean()
             cls_loss = F.cross_entropy(conf, idx)
@@ -251,7 +257,7 @@ class MotionTransformer(nn.Module):
                 "best_mode_errors": best_errs,
             }
         elif loss_type == "weighted":
-            errs = F.mse_loss(trajs, targ, reduction="none").mean(dim=-1)
+            errs = F.mse_loss(trajs, targ, reduction="none").mean(dim=(1, 3))  # [B, Q]
             w_errs = (errs * conf).sum(dim=-1).mean()
             reg_loss = w_errs
             conf_reg = -torch.log(conf + 1e-8).mean()

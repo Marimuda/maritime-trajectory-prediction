@@ -8,11 +8,14 @@ with appropriate metrics and loss functions, plus state-of-the-art models.
 # SOTA Models
 from .anomaly_transformer import (
     MARITIME_ANOMALY_CONFIG,
-    AnomalyTransformer,
     AnomalyTransformerTrainer,
     create_anomaly_transformer,
     create_maritime_anomaly_transformer,
 )
+from .anomaly_transformer import (
+    AnomalyTransformerLightning as AnomalyTransformer,  # Present Lightning version as AnomalyTransformer
+)
+
 # Import baseline models - conditionally to avoid import errors
 try:
     from .baseline_models import (
@@ -48,9 +51,15 @@ except ImportError:
     create_metrics = None
 try:
     from .motion_transformer import (
-        MotionTransformerLightning as MotionTransformer,
+        MotionTransformerLightning as MotionTransformer,  # Present Lightning version as MotionTransformer
+    )
+    from .motion_transformer import (
+        MotionTransformerTrainer,
+    )
+    from .motion_transformer import (
         create_motion_transformer_lightning as create_motion_transformer,
     )
+
     # Define placeholder config since it's not exported from motion_transformer
     MARITIME_MTR_CONFIG = {
         "input_dim": 4,
@@ -64,7 +73,6 @@ try:
         "prediction_horizon": 30,
         "output_dim": 4,
     }
-    MotionTransformerTrainer = None  # Not implemented
     create_maritime_motion_transformer = create_motion_transformer
 except ImportError:
     MotionTransformer = None
@@ -174,7 +182,6 @@ DEFAULT_CONFIGS = {
         "hidden_dim": 128,
         "num_layers": 3,
         "dropout": 0.2,
-        "aggregation": "mean",
     },
     "anomaly_transformer": {
         "input_dim": 4,
@@ -228,7 +235,7 @@ def create_model(model_type: str, task: str = None, **kwargs):
     elif model_type == "motion_transformer":
         config = DEFAULT_CONFIGS["motion_transformer"].copy()
         config.update(kwargs)
-        return create_motion_transformer(**config)
+        return create_motion_transformer(**config)  # Return Lightning module
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 

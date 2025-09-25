@@ -633,31 +633,6 @@ class AnomalyTransformerLightning(pl.LightningModule):
         }
 
 
-def create_anomaly_transformer(
-    input_dim: int, d_model: int = 512, n_heads: int = 8, n_layers: int = 6, **kwargs
-) -> AnomalyTransformer:
-    """
-    Factory function to create AnomalyTransformer model.
-
-    Args:
-        input_dim: Input feature dimension
-        d_model: Model dimension
-        n_heads: Number of attention heads
-        n_layers: Number of transformer layers
-        **kwargs: Additional model parameters
-
-    Returns:
-        AnomalyTransformer model
-    """
-    return AnomalyTransformer(
-        input_dim=input_dim,
-        d_model=d_model,
-        n_heads=n_heads,
-        n_layers=n_layers,
-        **kwargs,
-    )
-
-
 # Maritime-specific configurations
 MARITIME_ANOMALY_CONFIG = {
     "small": {
@@ -690,7 +665,23 @@ MARITIME_ANOMALY_CONFIG = {
 }
 
 
-def create_maritime_anomaly_transformer(size: str = "medium") -> AnomalyTransformer:
+def create_anomaly_transformer(**kwargs) -> AnomalyTransformerLightning:
+    """
+    Factory function to create AnomalyTransformerLightning with given parameters.
+    Returns Lightning module for consistency with unified API.
+
+    Args:
+        **kwargs: Configuration parameters for the model
+
+    Returns:
+        AnomalyTransformerLightning instance
+    """
+    return AnomalyTransformerLightning(None, **kwargs)
+
+
+def create_maritime_anomaly_transformer(
+    size: str = "medium",
+) -> AnomalyTransformerLightning:
     """
     Create AnomalyTransformer configured for maritime applications.
 

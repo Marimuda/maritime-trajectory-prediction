@@ -13,6 +13,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 from .ais_fuser import AISFuserLightning
+from .anomaly_transformer import AnomalyTransformerLightning
 
 # Import your model classes
 from .baseline_models.kalman.lightning_adapter import (
@@ -66,6 +67,8 @@ def create_model(config: DictConfig | dict[str, Any]) -> pl.LightningModule:
         return XGBoostModelLightning(config)
     elif model_type == "motion_transformer":
         return MotionTransformerLightning(config)
+    elif model_type == "anomaly_transformer":
+        return AnomalyTransformerLightning(config)
     elif model_type in ["kalman", "imm", "kalman_imm", "maritime_imm"]:
         return create_imm_lightning(config)
     elif model_type in ["kalman_cv", "constant_velocity"]:

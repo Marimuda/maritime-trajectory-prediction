@@ -15,10 +15,14 @@ import torch
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../src"))
 
+# Import unified API types
+from models import (  # These are the Lightning versions from unified API
+    AnomalyTransformer,
+    MotionTransformer,
+)
 from models.anomaly_transformer import (
     MARITIME_ANOMALY_CONFIG,
     AnomalyAttention,
-    AnomalyTransformer,
     AnomalyTransformerTrainer,
     TransformerEncoderLayer,
     create_anomaly_transformer,
@@ -26,8 +30,7 @@ from models.anomaly_transformer import (
 )
 from models.blocks.motion_transformer import (
     ContextEncoder,
-    MotionDecoder,
-    MotionTransformer,
+    MotionDecoder,  # Raw torch module for internal testing
 )
 from models.motion_transformer import (
     MARITIME_MTR_CONFIG,
