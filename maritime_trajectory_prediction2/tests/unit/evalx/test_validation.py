@@ -19,7 +19,7 @@ class TestTimeSeriesSplit:
     def setup_method(self):
         """Setup test fixtures."""
         # Create sample time series data
-        dates = pd.date_range("2023-01-01", periods=100, freq="1H")
+        dates = pd.date_range("2023-01-01", periods=100, freq="1h")
         self.df = pd.DataFrame(
             {
                 "timestamp": dates,
@@ -175,7 +175,7 @@ class TestMaritimeCVSplit:
         """Setup test fixtures."""
         # Create comprehensive maritime dataset
         vessels = ["vessel_1", "vessel_2", "vessel_3", "vessel_4"]
-        dates = pd.date_range("2023-01-01", periods=200, freq="1H")
+        dates = pd.date_range("2023-01-01", periods=200, freq="1h")
 
         data = []
         for i, timestamp in enumerate(dates):
@@ -249,7 +249,7 @@ class TestValidateSplitQuality:
     def setup_method(self):
         """Setup test fixtures."""
         # Create dataset with known properties
-        dates = pd.date_range("2023-01-01", periods=100, freq="1H")
+        dates = pd.date_range("2023-01-01", periods=100, freq="1h")
         self.df = pd.DataFrame(
             {
                 "timestamp": dates,

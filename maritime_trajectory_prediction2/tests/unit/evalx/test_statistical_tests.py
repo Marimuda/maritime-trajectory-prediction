@@ -24,9 +24,9 @@ class TestPairedTTest:
 
         assert isinstance(result, TestResult)
         assert result.test_name == "Paired t-test"
-        assert isinstance(result.statistic, (float, np.floating))
-        assert isinstance(result.p_value, (float, np.floating))
-        assert isinstance(result.effect_size, (float, np.floating))
+        assert isinstance(result.statistic, float | np.floating)
+        assert isinstance(result.p_value, float | np.floating)
+        assert isinstance(result.effect_size, float | np.floating)
         assert result.effect_size_interpretation in [
             "negligible",
             "small",
@@ -67,8 +67,8 @@ class TestPairedTTest:
     def test_paired_t_test_effect_size_interpretation(self):
         """Test effect size interpretation."""
         # Small effect
-        group_a = np.array([1.0, 1.1, 1.0, 1.1, 1.0])
-        group_b = np.array([1.0, 1.0, 1.0, 1.0, 1.0])
+        group_a = np.array([1.00, 1.02, 0.98, 1.03, 0.97])
+        group_b = np.array([1.00, 1.00, 1.00, 1.00, 1.00])
         result = paired_t_test(group_a, group_b)
         assert result.effect_size_interpretation in ["negligible", "small"]
 
@@ -100,8 +100,8 @@ class TestWilcoxonTest:
 
         assert isinstance(result, TestResult)
         assert result.test_name == "Wilcoxon signed-rank test"
-        assert isinstance(result.statistic, (float, np.floating))
-        assert isinstance(result.p_value, (float, np.floating))
+        assert isinstance(result.statistic, float | np.floating)
+        assert isinstance(result.p_value, float | np.floating)
         assert isinstance(result.significant, bool)
 
     def test_wilcoxon_test_different_alternatives(self):
@@ -145,7 +145,7 @@ class TestWilcoxonTest:
         result = wilcoxon_test(group_a, group_b)
 
         if result.effect_size is not None:
-            assert isinstance(result.effect_size, (float, np.floating))
+            assert isinstance(result.effect_size, float | np.floating)
             assert result.effect_size_interpretation in [
                 "negligible",
                 "small",
@@ -166,9 +166,9 @@ class TestCliffssDelta:
 
         assert isinstance(result, TestResult)
         assert result.test_name == "Cliff's delta"
-        assert isinstance(result.statistic, (float, np.floating))
+        assert isinstance(result.statistic, float | np.floating)
         assert result.p_value is None  # Cliff's delta is not a significance test
-        assert isinstance(result.effect_size, (float, np.floating))
+        assert isinstance(result.effect_size, float | np.floating)
         assert result.effect_size_interpretation in [
             "negligible",
             "small",
@@ -242,8 +242,8 @@ class TestMcNemarTest:
 
         assert isinstance(result, TestResult)
         assert result.test_name == "McNemar test"
-        assert isinstance(result.statistic, (float, np.floating))
-        assert isinstance(result.p_value, (float, np.floating))
+        assert isinstance(result.statistic, float | np.floating)
+        assert isinstance(result.p_value, float | np.floating)
         assert isinstance(result.significant, bool)
 
     def test_mcnemar_test_small_sample(self):
@@ -369,9 +369,9 @@ class TestIntegrationScenarios:
         c_result = cliffs_delta(small_sample_a, small_sample_b)
 
         # All should return valid results
-        assert isinstance(t_result.p_value, (float, np.floating))
-        assert isinstance(w_result.p_value, (float, np.floating))
-        assert isinstance(c_result.effect_size, (float, np.floating))
+        assert isinstance(t_result.p_value, float | np.floating)
+        assert isinstance(w_result.p_value, float | np.floating)
+        assert isinstance(c_result.effect_size, float | np.floating)
 
     def test_no_difference_scenario(self):
         """Test behavior when models perform identically."""
