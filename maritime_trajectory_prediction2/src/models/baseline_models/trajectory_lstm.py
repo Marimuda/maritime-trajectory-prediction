@@ -1,5 +1,7 @@
 """
 LightningModule: Bidirectional LSTM with attention for trajectory prediction.
+
+Supports optional maritime safety-aware loss for collision avoidance training.
 """
 
 import pytorch_lightning as pl
@@ -19,6 +21,9 @@ class TrajectoryLSTMLightning(pl.LightningModule):
         bidirectional: bool = True,
         learning_rate: float = 1e-3,
         weight_decay: float = 1e-4,
+        use_maritime_safety: bool = False,
+        collision_weight: float = 10.0,
+        feasibility_weight: float = 5.0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -45,6 +50,13 @@ class TrajectoryLSTMLightning(pl.LightningModule):
             nn.Linear(self.hparams.hidden_dim, self.hparams.output_dim),
         )
         self.loss_fn = nn.MSELoss()
+        self.use_maritime_safety = use_maritime_safety
+
+        # Import maritime safety loss if needed
+        if self.use_maritime_safety:
+            from ...loss.trajectory_loss import maritime_safety_loss
+
+            self.maritime_safety_loss = maritime_safety_loss
 
     def forward(self, x: torch.Tensor, lengths=None):
         if lengths is not None:
@@ -62,15 +74,56 @@ class TrajectoryLSTMLightning(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch["input"], batch["target"]
         preds = self(x, batch.get("lengths"))
-        loss = self.loss_fn(preds, y)
-        self.log("train_loss", loss, on_epoch=True)
+
+        # Use maritime safety loss if enabled and data available
+        if self.use_maritime_safety and "neighbors" in batch:
+            loss, loss_components = self.maritime_safety_loss(
+                preds,
+                y,
+                neighbor_trajectories=batch.get("neighbors"),
+                vessel_specs=batch.get("vessel_specs"),
+                collision_weight=self.hparams.collision_weight,
+                feasibility_weight=self.hparams.feasibility_weight,
+            )
+            # Log individual components
+            for name, value in loss_components.items():
+                self.log(f"train/{name}", value, on_epoch=True)
+        else:
+            loss = self.loss_fn(preds, y)
+
+        self.log("train_loss", loss, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch["input"], batch["target"]
         preds = self(x, batch.get("lengths"))
-        loss = self.loss_fn(preds, y)
-        self.log("val_loss", loss, on_epoch=True)
+
+        # Use maritime safety loss if enabled and data available
+        if self.use_maritime_safety and "neighbors" in batch:
+            loss, loss_components = self.maritime_safety_loss(
+                preds,
+                y,
+                neighbor_trajectories=batch.get("neighbors"),
+                vessel_specs=batch.get("vessel_specs"),
+                collision_weight=self.hparams.collision_weight,
+                feasibility_weight=self.hparams.feasibility_weight,
+            )
+            # Log individual components
+            for name, value in loss_components.items():
+                self.log(f"val/{name}", value, on_epoch=True)
+
+            # Log collision risk specifically for monitoring
+            if "collision_risk" in loss_components:
+                self.log(
+                    "val_collision_risk",
+                    loss_components["collision_risk"],
+                    on_epoch=True,
+                    prog_bar=True,
+                )
+        else:
+            loss = self.loss_fn(preds, y)
+
+        self.log("val_loss", loss, on_epoch=True, prog_bar=True)
         self.log("val_mae", F.l1_loss(preds, y), on_epoch=True)
         return loss
 
