@@ -147,13 +147,18 @@ class KalmanBaselineLightning(pl.LightningModule):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass - not applicable for Kalman baselines.
+        Forward pass - not applicable for Kalman filter baselines.
 
-        This method is required by Lightning but not used for baseline models
-        since they follow a different prediction protocol.
+        Kalman filters don't use neural network forward passes. Use predict_step()
+        or call baseline_model.predict() directly instead.
+
+        Raises:
+            NotImplementedError: Kalman filters don't support forward() interface
         """
-        # Return dummy tensor to satisfy Lightning interface
-        return torch.zeros((x.shape[0], self.prediction_horizon, 2))
+        raise NotImplementedError(
+            "Kalman filter baselines don't support forward() pass. "
+            "Use predict_step() or baseline_model.predict() instead."
+        )
 
     def training_step(
         self, batch: dict[str, torch.Tensor], batch_idx: int
@@ -341,40 +346,47 @@ class KalmanBaselineLightning(pl.LightningModule):
         self, batch: dict[str, torch.Tensor], batch_idx: int, dataloader_idx: int = 0
     ) -> torch.Tensor:
         """
-        Prediction step - generate predictions using baseline model.
+        Prediction step - generate predictions using Kalman baseline model.
+
+        Uses AISDataModule batch format with "input" key containing historical trajectory.
+        Returns predictions as (batch_size, prediction_horizon, 2) tensor of [lat, lon].
         """
         if not self.is_fitted:
-            # Return zeros if model not fitted
-            batch_size = batch["trajectory"].shape[0]
-            return torch.zeros((batch_size, self.prediction_horizon, 2))
+            raise RuntimeError(
+                "Cannot predict with unfitted model. Call fit() or run training first."
+            )
 
-        trajectories = batch["trajectory"].cpu().numpy()
+        # Extract input sequences (historical trajectory)
+        input_seq = batch["input"].cpu().numpy()  # (batch, seq_len, features)
+
         batch_predictions = []
 
-        for traj in trajectories:
-            # Remove padding
-            valid_mask = traj[:, 0] != -1
-            if not np.any(valid_mask):
-                # Return zeros for invalid trajectory
-                batch_predictions.append(np.zeros((self.prediction_horizon, 2)))
-                continue
+        for i in range(len(input_seq)):
+            # Extract lat/lon from first 2 columns
+            input_latlon = input_seq[i, :, :2]  # (seq_len, 2)
 
-            valid_traj = traj[valid_mask]
-            MIN_PREDICTION_SEQUENCE_LENGTH = 2
-            if len(valid_traj) < MIN_PREDICTION_SEQUENCE_LENGTH:
-                batch_predictions.append(np.zeros((self.prediction_horizon, 2)))
-                continue
+            # Validate input
+            if (
+                np.any(np.isnan(input_latlon))
+                or len(input_latlon) < MIN_SEQUENCE_LENGTH_FOR_PREDICTION
+            ):
+                raise ValueError(
+                    f"Invalid input sequence at batch index {i}: "
+                    f"contains NaN or too short (< {MIN_SEQUENCE_LENGTH_FOR_PREDICTION} points)"
+                )
 
             try:
+                # Make prediction using Kalman filter
                 result = self.baseline_model.predict(
-                    valid_traj,
+                    input_latlon,
                     horizon=self.prediction_horizon,
                     return_uncertainty=False,
                 )
                 batch_predictions.append(result.predictions)
-            except Exception:
-                # Fallback to zeros if prediction fails
-                batch_predictions.append(np.zeros((self.prediction_horizon, 2)))
+            except Exception as e:
+                raise RuntimeError(
+                    f"Kalman prediction failed for batch index {i}: {e}"
+                ) from e
 
         return torch.tensor(np.array(batch_predictions), dtype=torch.float32)
 
