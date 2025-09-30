@@ -84,8 +84,11 @@ class AISTrajectoryDataset(Dataset):
     """
     PyTorch Dataset for AIS trajectory sequences.
 
-    Expects sequences with numpy arrays for efficient storage and loading.
-    Arrays are converted to tensors on-demand in __getitem__.
+    Expects sequences with numpy float32 arrays for optimal ML performance.
+    Arrays are converted to tensors using zero-copy torch.from_numpy() in __getitem__.
+
+    Note: Use AISDataModule to create datasets - it handles format normalization
+    automatically (including migration of old DataFrame caches to numpy format).
     """
 
     def __init__(self, sequences: list[dict]):
@@ -94,53 +97,62 @@ class AISTrajectoryDataset(Dataset):
 
         Args:
             sequences: List of trajectory sequences, each containing:
-                - input_sequence: numpy array with input features (may include derived features)
-                - target_sequence: numpy array with target features (typically basic trajectory)
+                - input_sequence: numpy float32 array (seq_len, features)
+                - target_sequence: numpy float32 array (pred_horizon, features)
                 - mmsi: Vessel identifier
                 - segment_id: Trajectory segment identifier
         """
         self.sequences = sequences
 
-        # Store metadata from first sequence (now numpy arrays, not DataFrames)
+        # Store metadata from first sequence
         if sequences:
             first_input = sequences[0]["input_sequence"]
             first_target = sequences[0]["target_sequence"]
 
-            # Handle both numpy arrays (new) and DataFrames (legacy)
-            if isinstance(first_input, pd.DataFrame):
-                self.input_dim = len(first_input.columns)
-                self.output_dim = len(first_target.columns)
-                self.sequence_length = len(first_input)
-                self.prediction_horizon = len(first_target)
-            else:
-                # Numpy array: shape is (seq_len, features)
-                self.input_dim = first_input.shape[1]
-                self.output_dim = first_target.shape[1]
-                self.sequence_length = first_input.shape[0]
-                self.prediction_horizon = first_target.shape[0]
+            # Validate format (fail fast with clear error message)
+            if not isinstance(first_input, np.ndarray):
+                raise TypeError(
+                    f"Expected numpy arrays, got {type(first_input)}. "
+                    "Use AISDataModule which handles format normalization."
+                )
+
+            # Simple dimension extraction (no type checking!)
+            self.input_dim = first_input.shape[1]
+            self.output_dim = first_target.shape[1]
+            self.sequence_length = first_input.shape[0]
+            self.prediction_horizon = first_target.shape[0]
+        else:
+            self.input_dim = 0
+            self.output_dim = 0
+            self.sequence_length = 0
+            self.prediction_horizon = 0
 
     def __len__(self):
         return len(self.sequences)
 
     def __getitem__(self, idx):
+        """
+        Get a single sequence (HOT PATH - optimized for performance).
+
+        This method is called millions of times during training, so we:
+        - Avoid all type checking (format ensured at construction)
+        - Use zero-copy torch.from_numpy() instead of torch.tensor()
+        - Skip dtype conversion (arrays already float32)
+
+        Returns:
+            dict: Batch item with:
+                - input: torch.Tensor (seq_len, features) - zero-copy view of numpy array
+                - target: torch.Tensor (pred_horizon, features) - zero-copy view
+                - mmsi: int - vessel identifier
+                - segment_id: int - trajectory segment identifier
+        """
         sequence_data = self.sequences[idx]
 
-        input_seq = sequence_data["input_sequence"]
-        target_seq = sequence_data["target_sequence"]
-
-        # Convert to numpy if DataFrame (legacy), otherwise already numpy
-        if isinstance(input_seq, pd.DataFrame):
-            input_features = input_seq.values.astype(np.float32)
-            target_features = target_seq.values.astype(np.float32)
-        else:
-            # Already numpy array - just ensure correct dtype
-            input_features = input_seq.astype(np.float32)
-            target_features = target_seq.astype(np.float32)
-
-        # Return with singular keys to match model expectations
+        # Zero-copy conversion: torch.from_numpy() creates a tensor view
+        # This is 3-5x faster than torch.tensor() which copies data
         return {
-            "input": torch.tensor(input_features),
-            "target": torch.tensor(target_features),
+            "input": torch.from_numpy(sequence_data["input_sequence"]),
+            "target": torch.from_numpy(sequence_data["target_sequence"]),
             "mmsi": sequence_data["mmsi"],
             "segment_id": sequence_data["segment_id"],
         }
@@ -427,19 +439,15 @@ class AISDataModule(pl.LightningDataModule):
 
         logger.info(f"Generated {len(sequences)} sequences")
 
-        # Store input dimension for model configuration (from actual input features)
+        # Store input dimension for model configuration
+        # Sequences are guaranteed to be numpy arrays (from _ensure_numpy_format)
         if sequences:
             first_seq = sequences[0]["input_sequence"]
             first_target = sequences[0]["target_sequence"]
 
-            # Handle both numpy arrays (new) and DataFrames (legacy)
-            if isinstance(first_seq, pd.DataFrame):
-                self.input_dim = len(first_seq.columns)
-                target_dim = len(first_target.columns)
-            else:
-                # Numpy array: shape is (seq_len, features)
-                self.input_dim = first_seq.shape[1]
-                target_dim = first_target.shape[1]
+            # Simple dimension extraction (no type checking needed!)
+            self.input_dim = first_seq.shape[1]
+            target_dim = first_target.shape[1]
 
             logger.info(
                 f"Input dimension: {self.input_dim} (includes derived features)"
@@ -487,29 +495,145 @@ class AISDataModule(pl.LightningDataModule):
             with open(sequences_path, "rb") as f:
                 sequences = pickle.load(f)  # nosec B301 - loading our own cached data, not untrusted input
             logger.info(f"✓ Loaded {len(sequences)} pre-built sequences")
+        else:
+            # If no pre-built sequences, build them now (fallback for CSV/Parquet input)
+            logger.warning(
+                "No pre-built sequences found - building from scratch (this will be slow)..."
+            )
+            logger.warning(
+                "Consider running preprocessing separately to save time on future runs"
+            )
+
+            # Load processed data
+            processed_data = self._load_processed_data(data_path)
+
+            # Build sequences
+            sequences = self._build_sequences_from_df(processed_data)
+
+            # Save for future use
+            logger.info(f"Saving sequences to {sequences_path} for future runs...")
+            with open(sequences_path, "wb") as f:
+                pickle.dump(sequences, f)
+
+            logger.info(f"✓ Built and saved {len(sequences)} sequences")
+
+        # Ensure sequences are in optimal numpy format (migrate old DataFrame caches)
+        sequences = self._ensure_numpy_format(sequences)
+
+        return sequences
+
+    def _ensure_numpy_format(self, sequences: list[dict]) -> list[dict]:
+        """
+        Ensure all sequences use numpy float32 arrays for optimal ML performance.
+
+        This method provides backward compatibility with cached DataFrame sequences
+        while maintaining clean, type-homogeneous code paths throughout the rest
+        of the pipeline.
+
+        Args:
+            sequences: List of sequence dicts (may contain DataFrames or numpy arrays)
+
+        Returns:
+            List of sequence dicts with numpy float32 arrays
+        """
+        if not sequences:
             return sequences
 
-        # If no pre-built sequences, build them now (fallback for CSV/Parquet input)
-        logger.warning(
-            "No pre-built sequences found - building from scratch (this will be slow)..."
+        # Check format of first sequence
+        first_input = sequences[0]["input_sequence"]
+
+        # Already numpy arrays - check dtype
+        if isinstance(first_input, np.ndarray):
+            if first_input.dtype == np.float32:
+                logger.info("✓ Sequences already in optimal numpy float32 format")
+                return sequences
+
+            # Fix dtype only
+            logger.info(f"Normalizing sequence dtype: {first_input.dtype} → float32...")
+            return self._normalize_dtype(sequences)
+
+        # Migrate from DataFrame format (old cached sequences)
+        logger.info("Migrating cached sequences: DataFrame → numpy float32 array...")
+        import time
+
+        start_time = time.time()
+        migrated = self._migrate_dataframe_sequences(sequences)
+        migration_time = time.time() - start_time
+
+        logger.info(
+            f"✓ Migrated {len(migrated)} sequences to numpy format in {migration_time:.1f}s"
         )
-        logger.warning(
-            "Consider running preprocessing separately to save time on future runs"
-        )
+        logger.info("  Future loads will be faster with numpy format")
 
-        # Load processed data
-        processed_data = self._load_processed_data(data_path)
+        return migrated
 
-        # Build sequences
-        sequences = self._build_sequences_from_df(processed_data)
+    def _normalize_dtype(self, sequences: list[dict]) -> list[dict]:
+        """Ensure all numpy arrays use float32 dtype (optimal for ML)."""
+        normalized = []
 
-        # Save for future use
-        logger.info(f"Saving sequences to {sequences_path} for future runs...")
-        with open(sequences_path, "wb") as f:
-            pickle.dump(sequences, f)
+        for seq in sequences:
+            input_seq = seq["input_sequence"]
+            target_seq = seq["target_sequence"]
 
-        logger.info(f"✓ Built and saved {len(sequences)} sequences")
-        return sequences
+            # Convert to float32 if needed
+            if input_seq.dtype != np.float32:
+                input_seq = input_seq.astype(np.float32)
+            if target_seq.dtype != np.float32:
+                target_seq = target_seq.astype(np.float32)
+
+            normalized.append(
+                {
+                    "input_sequence": input_seq,
+                    "target_sequence": target_seq,
+                    "mmsi": seq["mmsi"],
+                    "segment_id": seq["segment_id"],
+                }
+            )
+
+        return normalized
+
+    def _migrate_dataframe_sequences(self, sequences: list[dict]) -> list[dict]:
+        """
+        Migrate sequences from DataFrame format to numpy arrays.
+
+        This handles old cached sequences that used DataFrames.
+        New sequences are created directly as numpy arrays for better performance.
+        """
+        migrated = []
+
+        for seq in sequences:
+            input_seq = seq["input_sequence"]
+            target_seq = seq["target_sequence"]
+
+            # Convert DataFrames to numpy arrays
+            if isinstance(input_seq, pd.DataFrame):
+                input_seq = input_seq.values.astype(np.float32)
+            elif isinstance(input_seq, np.ndarray):
+                input_seq = input_seq.astype(np.float32)
+            else:
+                raise TypeError(
+                    f"Expected DataFrame or numpy array for input_sequence, got {type(input_seq)}"
+                )
+
+            if isinstance(target_seq, pd.DataFrame):
+                target_seq = target_seq.values.astype(np.float32)
+            elif isinstance(target_seq, np.ndarray):
+                target_seq = target_seq.astype(np.float32)
+            else:
+                raise TypeError(
+                    f"Expected DataFrame or numpy array for target_sequence, got {type(target_seq)}"
+                )
+
+            migrated.append(
+                {
+                    "input_sequence": input_seq,
+                    "target_sequence": target_seq,
+                    "mmsi": seq["mmsi"],
+                    "segment_id": seq["segment_id"],
+                }
+            )
+
+        return migrated
 
     def _build_sequences_from_df(self, df: pd.DataFrame):
         """Build sequences from DataFrame (used during preprocessing)."""

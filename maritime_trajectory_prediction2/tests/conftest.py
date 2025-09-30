@@ -113,7 +113,12 @@ def tensor_factory():
 
 @pytest.fixture
 def trajectory_factory():
-    """Factory for generating trajectory sequences for model testing."""
+    """
+    Factory for generating trajectory sequences for model testing.
+
+    Returns sequences with numpy float32 arrays (optimal ML format).
+    This matches the expected format after AISDataModule normalization.
+    """
 
     def _make_trajectory_sequence(
         sequence_length: int = 20,
@@ -121,7 +126,7 @@ def trajectory_factory():
         n_features: int = 4,
         seed: int = 0,
     ) -> dict[str, Any]:
-        """Generate a trajectory sequence for testing."""
+        """Generate a trajectory sequence for testing (numpy format)."""
         np.random.seed(seed)
 
         # Generate smooth trajectory
@@ -135,16 +140,26 @@ def trajectory_factory():
         sog = 10 + 2 * np.sin(4 * np.pi * t) + np.random.normal(0, 0.5, len(t))
         cog = (90 + 30 * np.sin(3 * np.pi * t)) % 360
 
-        # Create DataFrame
-        df = pd.DataFrame(
-            {"lat": lat, "lon": lon, "sog": np.clip(sog, 0, 30), "cog": cog}
+        # Create numpy arrays (optimal format for ML - matches post-normalization format)
+        features = np.column_stack([lat, lon, np.clip(sog, 0, 30), cog]).astype(
+            np.float32
         )
 
         # Split into input and target
-        input_sequence = df.iloc[:sequence_length]
-        target_sequence = df.iloc[
+        input_sequence = features[:sequence_length]
+        target_sequence = features[
             sequence_length : sequence_length + prediction_horizon
         ]
+
+        # Also keep full trajectory as DataFrame for reference (some tests may need it)
+        df = pd.DataFrame(
+            {
+                "lat": features[:, 0],
+                "lon": features[:, 1],
+                "sog": features[:, 2],
+                "cog": features[:, 3],
+            }
+        )
 
         return {
             "input_sequence": input_sequence,

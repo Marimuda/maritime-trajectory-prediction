@@ -80,18 +80,19 @@ class TestAISTrajectoryDataset:
         assert item["input"].shape == (20, 4)
         assert item["target"].shape == (5, 4)
 
-    def test_backward_compatibility_with_dataframes(self, trajectory_factory):
-        """Test that dataset still works with DataFrame sequences (legacy)."""
-        sequences = [trajectory_factory(seed=i) for i in range(5)]
-        dataset = AISTrajectoryDataset(sequences=sequences)
+    def test_rejects_dataframe_input(self):
+        """Test that dataset properly rejects DataFrame input with clear error."""
+        # Create sequence with DataFrames (old format)
+        sequence = {
+            "input_sequence": pd.DataFrame(np.random.randn(20, 4)),
+            "target_sequence": pd.DataFrame(np.random.randn(5, 4)),
+            "mmsi": 123456789,
+            "segment_id": 0,
+        }
 
-        item = dataset[0]
-
-        # Should still work correctly
-        assert isinstance(item["input"], torch.Tensor)
-        assert isinstance(item["target"], torch.Tensor)
-        assert item["input"].shape == (20, 4)
-        assert item["target"].shape == (5, 4)
+        # Should raise TypeError with helpful message
+        with pytest.raises(TypeError, match="Expected numpy arrays.*Use AISDataModule"):
+            AISTrajectoryDataset([sequence])
 
     def test_getitem_returns_correct_format(self, trajectory_factory):
         """Test that __getitem__ returns correct batch format."""
