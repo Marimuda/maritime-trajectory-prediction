@@ -42,24 +42,20 @@ def _process_vessel_sequences(args):
     Local/nested functions cannot be pickled, which was causing the original crash.
 
     Args:
-        args: Tuple of (mmsi, vessel_df, seq_len, pred_horizon, feature_cols, target_features)
+        args: Tuple of (mmsi, vessel_features_array, seq_len, pred_horizon, target_feature_count)
+              vessel_features_array is already a numpy array (pre-extracted to avoid serialization overhead)
 
     Returns:
         List of sequence dictionaries for this vessel
     """
-    mmsi, vessel_df, seq_len, pred_horizon, feature_cols, target_features = args
+    mmsi, vessel_features, seq_len, pred_horizon, target_feature_count = args
 
-    vessel_df = vessel_df.sort_values("time").reset_index(drop=True)
-
-    if len(vessel_df) < seq_len + pred_horizon:
+    # Check if vessel has enough data
+    if len(vessel_features) < seq_len + pred_horizon:
         return []
-
-    # Extract feature values ONCE (avoid repeated DataFrame indexing)
-    vessel_features = vessel_df[feature_cols].values
 
     # Create sliding window sequences for this vessel
     vessel_sequences = []
-    target_feature_count = len(target_features)
 
     for i in range(len(vessel_features) - seq_len - pred_horizon + 1):
         # Input sequence (numpy array - no DataFrame overhead!)
@@ -601,12 +597,6 @@ class AISDataModule(pl.LightningDataModule):
         self.input_features = feature_cols
         self.target_features = target_features
 
-        # Prepare vessel groups for parallel processing
-        vessel_groups = [
-            (mmsi, vessel_df) for mmsi, vessel_df in features_df.groupby("mmsi")
-        ]
-        logger.info(f"Processing {len(vessel_groups)} vessels in parallel...")
-
         # Process vessels in parallel
         from multiprocessing import Pool, cpu_count
 
@@ -615,22 +605,46 @@ class AISDataModule(pl.LightningDataModule):
         num_workers = min(32, max(8, cpu_count() // 4))
         logger.info(f"Using {num_workers} workers for parallel sequence generation")
 
-        # Prepare arguments for parallel processing
-        vessel_args = [
-            (
-                mmsi,
-                vessel_df,
-                self.sequence_length,
-                self.prediction_horizon,
-                feature_cols,
-                target_features,
+        # Pre-extract numpy arrays to avoid serializing DataFrames (major speedup!)
+        # Sort each vessel's data by time and extract features as numpy array
+        logger.info("Pre-processing vessel data for parallel execution...")
+        vessel_args = []
+        target_feature_count = len(target_features)
+
+        for mmsi, vessel_df in features_df.groupby("mmsi"):
+            # Sort by time and extract numpy array ONCE
+            sorted_vessel_df = vessel_df.sort_values("time").reset_index(drop=True)
+            vessel_features = sorted_vessel_df[feature_cols].values
+
+            vessel_args.append(
+                (
+                    int(mmsi),
+                    vessel_features,  # numpy array - fast serialization!
+                    self.sequence_length,
+                    self.prediction_horizon,
+                    target_feature_count,
+                )
             )
-            for mmsi, vessel_df in vessel_groups
-        ]
+
+        logger.info(f"✓ Prepared {len(vessel_args)} vessels for processing")
 
         # Process in parallel using module-level function (picklable)
+        from tqdm import tqdm
+
+        logger.info(
+            f"Processing {len(vessel_args)} vessels with {num_workers} workers..."
+        )
         with Pool(processes=num_workers) as pool:
-            results = pool.map(_process_vessel_sequences, vessel_args)
+            # Use imap for progress tracking instead of map
+            results = list(
+                tqdm(
+                    pool.imap(_process_vessel_sequences, vessel_args),
+                    total=len(vessel_args),
+                    desc="Generating sequences",
+                    unit="vessel",
+                    ncols=100,
+                )
+            )
 
         # Merge results and assign global sequence IDs
         sequences = []
