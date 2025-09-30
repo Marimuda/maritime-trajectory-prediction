@@ -607,11 +607,137 @@ class CollisionAvoidanceBuilder(BaseDatasetBuilder):
         return X, y
 
     def _add_collision_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add collision-specific features."""
-        # Relative motion features would be added here
-        # This requires multi-vessel analysis
-        df["collision_relative_speed"] = 0.0  # Placeholder
-        df["collision_relative_bearing"] = 0.0  # Placeholder
+        """
+        Add collision-specific features using CPA/TCPA calculator.
+
+        For each vessel position, finds nearby vessels and calculates:
+        - Minimum CPA distance (closest approach)
+        - Minimum TCPA time (time to closest approach)
+        - Number of nearby vessels
+        - Relative speed/bearing to closest vessel
+        """
+        from src.maritime.cpa_tcpa import CPACalculator, VesselState
+
+        calculator = CPACalculator(
+            cpa_warning_threshold=500.0,  # meters
+            tcpa_warning_threshold=600.0,  # seconds (10 min)
+        )
+
+        # Sort and create time buckets for grouping vessels
+        df = df.sort_values(["time"]).copy()
+        df["_time_bucket"] = df["time"].dt.floor("1min")  # 1-minute buckets
+
+        # Initialize collision feature columns
+        df["collision_min_cpa"] = float("inf")
+        df["collision_min_tcpa"] = float("inf")
+        df["collision_num_nearby"] = 0
+        df["collision_relative_speed"] = 0.0
+        df["collision_relative_bearing"] = 0.0
+
+        self.logger.info(
+            f"  → Calculating collision features for {len(df):,} records..."
+        )
+
+        # Process each time bucket (vessels at approximately same time)
+        MIN_VESSELS_FOR_COLLISION = 2
+        PROXIMITY_THRESHOLD_NM = 10.0  # Only consider vessels within 10 NM
+
+        for _time_bucket, bucket_df in df.groupby("_time_bucket"):
+            if len(bucket_df) < MIN_VESSELS_FOR_COLLISION:
+                continue
+
+            # For each vessel in this time window
+            for idx, row in bucket_df.iterrows():
+                if not all(
+                    pd.notna(row[col]) for col in ["lat", "lon", "sog", "cog"]
+                ):
+                    continue  # Skip if missing required data
+
+                vessel1 = VesselState(
+                    lat=row["lat"],
+                    lon=row["lon"],
+                    sog=row["sog"],
+                    cog=row["cog"],
+                    timestamp=row["time"],
+                )
+
+                # Find nearby vessels (exclude self)
+                nearby_vessels = []
+                nearby_data = []
+
+                for idx2, row2 in bucket_df.iterrows():
+                    if idx == idx2:  # Skip self
+                        continue
+
+                    if not all(
+                        pd.notna(row2[col]) for col in ["lat", "lon", "sog", "cog"]
+                    ):
+                        continue
+
+                    # Quick distance check
+                    distance = MaritimeUtils.calculate_distance(
+                        row["lat"], row["lon"], row2["lat"], row2["lon"]
+                    )
+
+                    if distance < PROXIMITY_THRESHOLD_NM:
+                        vessel2 = VesselState(
+                            lat=row2["lat"],
+                            lon=row2["lon"],
+                            sog=row2["sog"],
+                            cog=row2["cog"],
+                            timestamp=row2["time"],
+                        )
+                        nearby_vessels.append(vessel2)
+                        nearby_data.append({"distance": distance, "vessel": vessel2})
+
+                if nearby_vessels:
+                    # Calculate CPA/TCPA to all nearby vessels
+                    cpa_results = [
+                        calculator.calculate_cpa_tcpa_basic(vessel1, v)
+                        for v in nearby_vessels
+                    ]
+
+                    # Extract CPA distances and TCPA times
+                    cpa_distances = [r.cpa_distance for r in cpa_results]
+                    tcpa_times = [
+                        r.tcpa_time for r in cpa_results if r.tcpa_time > 0
+                    ]
+
+                    min_cpa = min(cpa_distances)
+                    min_tcpa = min(tcpa_times) if tcpa_times else float("inf")
+
+                    # Find closest vessel for relative motion features
+                    closest_idx = np.argmin(cpa_distances)
+                    closest_vessel = nearby_vessels[closest_idx]
+
+                    # Calculate relative speed (magnitude of velocity difference)
+                    v1x = vessel1.sog * np.cos(np.radians(vessel1.cog))
+                    v1y = vessel1.sog * np.sin(np.radians(vessel1.cog))
+                    v2x = closest_vessel.sog * np.cos(np.radians(closest_vessel.cog))
+                    v2y = closest_vessel.sog * np.sin(np.radians(closest_vessel.cog))
+
+                    rel_speed = np.sqrt((v2x - v1x) ** 2 + (v2y - v1y) ** 2)
+
+                    # Calculate bearing from vessel1 to closest vessel
+                    rel_bearing = MaritimeUtils.calculate_bearing(
+                        vessel1.lat, vessel1.lon, closest_vessel.lat, closest_vessel.lon
+                    )
+
+                    # Update features
+                    df.loc[idx, "collision_min_cpa"] = min_cpa
+                    df.loc[idx, "collision_min_tcpa"] = min_tcpa
+                    df.loc[idx, "collision_num_nearby"] = len(nearby_vessels)
+                    df.loc[idx, "collision_relative_speed"] = rel_speed
+                    df.loc[idx, "collision_relative_bearing"] = rel_bearing
+
+        # Clean up temporary column
+        df = df.drop(columns=["_time_bucket"])
+
+        self.logger.info(
+            f"    ✓ Collision features calculated "
+            f"(avg nearby vessels: {df['collision_num_nearby'].mean():.1f})"
+        )
+
         return df
 
     def _add_risk_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -625,11 +751,68 @@ class CollisionAvoidanceBuilder(BaseDatasetBuilder):
         return df
 
     def _calculate_collision_risk(self, df: pd.DataFrame) -> pd.Series:
-        """Calculate collision risk scores."""
-        # Simplified risk calculation
-        return pd.Series(0.0, index=df.index)
+        """
+        Calculate collision risk scores based on CPA distance and TCPA time.
+
+        Risk levels (0.0 to 1.0):
+        - 1.0 (Critical): CPA < 250m and TCPA < 5 min
+        - 0.75 (High): CPA < 500m and TCPA < 10 min
+        - 0.5 (Medium): CPA < 1000m and TCPA < 20 min
+        - 0.25 (Low): CPA < 2000m and TCPA < 30 min
+        - 0.0 (None): Otherwise
+        """
+        # Define thresholds (in meters and seconds)
+        CRITICAL_CPA = 250.0
+        CRITICAL_TCPA = 300.0  # 5 minutes
+
+        HIGH_CPA = 500.0
+        HIGH_TCPA = 600.0  # 10 minutes
+
+        MEDIUM_CPA = 1000.0
+        MEDIUM_TCPA = 1200.0  # 20 minutes
+
+        LOW_CPA = 2000.0
+        LOW_TCPA = 1800.0  # 30 minutes
+
+        risk_scores = pd.Series(0.0, index=df.index)
+
+        # Only calculate risk if collision features exist
+        if "collision_min_cpa" not in df.columns:
+            return risk_scores
+
+        # Calculate risk based on CPA and TCPA thresholds
+        cpa = df["collision_min_cpa"]
+        tcpa = df["collision_min_tcpa"]
+
+        # Evaluate risk levels in order (highest to lowest)
+        # Use explicit exclusions to prevent overlap
+
+        # Low risk (evaluated first, will be overwritten by higher risks)
+        low_mask = (cpa < LOW_CPA) & (tcpa < LOW_TCPA) & (tcpa > 0)
+        risk_scores[low_mask] = 0.25
+
+        # Medium risk (overwrites low if applicable)
+        medium_mask = (cpa < MEDIUM_CPA) & (tcpa < MEDIUM_TCPA) & (tcpa > 0)
+        risk_scores[medium_mask] = 0.5
+
+        # High risk (overwrites medium/low if applicable)
+        high_mask = (cpa < HIGH_CPA) & (tcpa < HIGH_TCPA) & (tcpa > 0)
+        risk_scores[high_mask] = 0.75
+
+        # Critical risk (overwrites all if applicable)
+        critical_mask = (cpa < CRITICAL_CPA) & (tcpa < CRITICAL_TCPA) & (tcpa > 0)
+        risk_scores[critical_mask] = 1.0
+
+        return risk_scores
 
     def _calculate_time_to_collision(self, df: pd.DataFrame) -> pd.Series:
-        """Calculate time to closest point of approach."""
-        # Simplified calculation
-        return pd.Series(float("inf"), index=df.index)
+        """
+        Calculate time to closest point of approach (TCPA).
+
+        Returns the minimum TCPA from the collision features.
+        If no nearby vessels, returns infinity.
+        """
+        if "collision_min_tcpa" in df.columns:
+            return df["collision_min_tcpa"]
+        else:
+            return pd.Series(float("inf"), index=df.index)
