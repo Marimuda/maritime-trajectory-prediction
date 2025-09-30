@@ -309,13 +309,9 @@ class KalmanBaselineLightning(pl.LightningModule):
         """
         Configure optimizers - not applicable for Kalman baselines.
 
-        Return dummy optimizer to satisfy Lightning requirements.
+        Return None since Kalman filters don't use gradient-based optimization.
         """
-        # Create dummy parameter to satisfy optimizer requirements
-        dummy_param = torch.nn.Parameter(torch.tensor([0.0]))
-        self.register_parameter("dummy_param", dummy_param)
-
-        return torch.optim.Adam([dummy_param], lr=1e-3)
+        return None
 
     def get_baseline_model(self) -> TrajectoryBaseline:
         """Get the underlying baseline model."""
