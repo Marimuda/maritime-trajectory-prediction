@@ -230,7 +230,6 @@ class TestCollisionAvoidancePipeline:
 
     def test_cpa_tcpa_calculator_integration(self):
         """Test that CPA/TCPA calculator from maritime module is used correctly."""
-        from src.maritime.cpa_tcpa import CPACalculator, VesselState
 
         # Create simple two-vessel scenario with overlapping timestamps
         # Vessel 111 and 222 both have positions at time t0 and t1
@@ -238,7 +237,12 @@ class TestCollisionAvoidancePipeline:
 
         data = {
             "mmsi": [111, 222, 111, 222],
-            "time": [times[0], times[0], times[1], times[1]],  # Both vessels at each time
+            "time": [
+                times[0],
+                times[0],
+                times[1],
+                times[1],
+            ],  # Both vessels at each time
             "lat": [59.0, 59.0, 59.0, 59.001],
             "lon": [10.0, 10.01, 10.001, 10.01],
             "sog": [10.0, 10.0, 10.0, 10.0],
