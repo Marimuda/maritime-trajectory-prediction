@@ -17,73 +17,94 @@ class MaritimeUtils:
     @staticmethod
     def calculate_distance(lat1, lon1, lat2, lon2):
         """
-        Calculate distance between two points using geodesic distance.
-        Handles both scalar and Series inputs.
+        Calculate distance between two points using vectorized Haversine formula.
+        Handles both scalar and Series/array inputs with efficient numpy broadcasting.
 
         Args:
-            lat1, lon1: First point coordinates (scalar or Series)
-            lat2, lon2: Second point coordinates (scalar or Series)
+            lat1, lon1: First point coordinates (scalar, Series, or array)
+            lat2, lon2: Second point coordinates (scalar, Series, or array)
 
         Returns:
-            Distance in nautical miles (scalar or Series)
+            Distance in nautical miles (scalar, Series, or array)
         """
         try:
-            # Check if any input is a Series
-            if any(isinstance(x, pd.Series) for x in [lat1, lon1, lat2, lon2]):
-                # Convert all to Series for vectorized operation
-                if not isinstance(lat1, pd.Series):
-                    # If lat2/lon2 are Series, create Series of same length
-                    if isinstance(lat2, pd.Series):
-                        lat1 = pd.Series([lat1] * len(lat2), index=lat2.index)
-                        lon1 = pd.Series([lon1] * len(lat2), index=lat2.index)
-                    else:
-                        lat1 = pd.Series([lat1])
-                        lon1 = pd.Series([lon1])
-                        lat2 = pd.Series([lat2])
-                        lon2 = pd.Series([lon2])
+            # Determine if we have Series inputs
+            is_series = any(isinstance(x, pd.Series) for x in [lat1, lon1, lat2, lon2])
 
-                # Create DataFrame for easier vectorization
-                df = pd.DataFrame(
-                    {"lat1": lat1, "lon1": lon1, "lat2": lat2, "lon2": lon2}
-                )
+            if is_series:
+                # Efficient handling: identify which inputs are Series and use numpy broadcasting
+                result_index = None
 
-                def calc_row_distance(row):
-                    if (
-                        pd.isna(row["lat1"])
-                        or pd.isna(row["lon1"])
-                        or pd.isna(row["lat2"])
-                        or pd.isna(row["lon2"])
-                    ):
-                        return np.nan
-                    try:
-                        point1 = (row["lat1"], row["lon1"])
-                        point2 = (row["lat2"], row["lon2"])
-                        distance_km = geodesic(point1, point2).kilometers
-                        return distance_km * 0.539957  # Convert to nautical miles
-                    except:
-                        return np.nan
-
-                result = df.apply(calc_row_distance, axis=1)
-                return result if len(result) > 1 else result.iloc[0]
-
-            # Handle scalar inputs
+                # Convert Series to numpy arrays, keep scalars as is
+                if isinstance(lat1, pd.Series):
+                    result_index = lat1.index
+                    lat1_arr = lat1.values
+                    lon1_arr = lon1.values if isinstance(lon1, pd.Series) else lon1
+                    # Use numpy broadcasting for scalar lat2/lon2
+                    lat2_arr = lat2.values if isinstance(lat2, pd.Series) else lat2
+                    lon2_arr = lon2.values if isinstance(lon2, pd.Series) else lon2
+                elif isinstance(lat2, pd.Series):
+                    result_index = lat2.index
+                    lat2_arr = lat2.values
+                    lon2_arr = lon2.values if isinstance(lon2, pd.Series) else lon2
+                    # Use numpy broadcasting for scalar lat1/lon1
+                    lat1_arr = lat1
+                    lon1_arr = lon1
+                else:
+                    # Edge case: lon1 or lon2 is Series but lat is not
+                    # Find the Series to get result index
+                    for x in [lon1, lon2]:
+                        if isinstance(x, pd.Series):
+                            result_index = x.index
+                            break
+                    lat1_arr = lat1.values if isinstance(lat1, pd.Series) else lat1
+                    lon1_arr = lon1.values if isinstance(lon1, pd.Series) else lon1
+                    lat2_arr = lat2.values if isinstance(lat2, pd.Series) else lat2
+                    lon2_arr = lon2.values if isinstance(lon2, pd.Series) else lon2
             else:
-                # Handle NaN values
+                # All scalars
                 if any(pd.isna([lat1, lon1, lat2, lon2])):
                     return np.nan
+                lat1_arr = lat1
+                lon1_arr = lon1
+                lat2_arr = lat2
+                lon2_arr = lon2
+                result_index = None
 
-                # Calculate geodesic distance
-                point1 = (lat1, lon1)
-                point2 = (lat2, lon2)
-                distance_km = geodesic(point1, point2).kilometers
+            # Vectorized Haversine formula
+            # Formula: d = 2 * R * arcsin(sqrt(sin²((lat2-lat1)/2) + cos(lat1)*cos(lat2)*sin²((lon2-lon1)/2)))
+            R = 6371.0  # Earth radius in km
 
-                # Convert to nautical miles
-                distance_nm = distance_km * 0.539957
+            # Convert to radians (vectorized, numpy handles broadcasting automatically)
+            lat1_rad = np.radians(lat1_arr)
+            lon1_rad = np.radians(lon1_arr)
+            lat2_rad = np.radians(lat2_arr)
+            lon2_rad = np.radians(lon2_arr)
 
+            # Haversine formula (all vectorized operations with automatic broadcasting!)
+            dlat = lat2_rad - lat1_rad
+            dlon = lon2_rad - lon1_rad
+            a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
+            c = 2 * np.arcsin(np.sqrt(a))
+            distance_km = R * c
+
+            # Convert to nautical miles (1 km = 0.539957 NM)
+            distance_nm = distance_km * 0.539957
+
+            # Return in appropriate format
+            if is_series and result_index is not None:
+                return pd.Series(distance_nm, index=result_index)
+            elif isinstance(distance_nm, np.ndarray) and distance_nm.size == 1:
+                return float(distance_nm)
+            elif np.isscalar(distance_nm):
+                return float(distance_nm)
+            else:
                 return distance_nm
 
         except Exception as e:
             logger.warning(f"Error calculating distance: {e}")
+            if is_series and result_index is not None:
+                return pd.Series(np.nan, index=result_index)
             return np.nan
 
     @staticmethod
@@ -279,7 +300,7 @@ class MaritimeUtils:
         df: pd.DataFrame, max_speed_knots: float = 50.0
     ) -> pd.DataFrame:
         """
-        Validate and clean trajectory data.
+        Validate and clean trajectory data (VECTORIZED for performance).
 
         Args:
             df: DataFrame with trajectory data
@@ -294,31 +315,38 @@ class MaritimeUtils:
 
             # Sort by time if available
             if "time" in df.columns:
-                df = df.sort_values("time")
+                df = df.sort_values("time").reset_index(drop=True)
 
-            # Calculate speeds between consecutive points
+            # Calculate speeds between consecutive points (VECTORIZED)
             if len(df) > 1 and "time" in df.columns:
-                speeds = []
-                for i in range(1, len(df)):
-                    prev_row = df.iloc[i - 1]
-                    curr_row = df.iloc[i]
+                # Get previous positions using shift (vectorized!)
+                df["_prev_lat"] = df["lat"].shift(1)
+                df["_prev_lon"] = df["lon"].shift(1)
+                df["_prev_time"] = df["time"].shift(1)
 
-                    distance = MaritimeUtils.calculate_distance(
-                        prev_row["lat"],
-                        prev_row["lon"],
-                        curr_row["lat"],
-                        curr_row["lon"],
-                    )
+                # Vectorized distance calculation
+                distances = MaritimeUtils.calculate_distance(
+                    df["_prev_lat"],
+                    df["_prev_lon"],
+                    df["lat"],
+                    df["lon"]
+                )
 
-                    time_diff = (
-                        curr_row["time"] - prev_row["time"]
-                    ).total_seconds() / 3600
-                    speed = MaritimeUtils.calculate_speed(distance, time_diff)
-                    speeds.append(speed)
+                # Vectorized time difference (in hours)
+                time_diffs = (df["time"] - df["_prev_time"]).dt.total_seconds() / 3600
 
-                # Mark unrealistic speeds
-                speeds = [np.nan] + speeds  # First point has no previous speed
+                # Vectorized speed calculation (distance/time)
+                # Handle division by zero and NaN values
+                speeds = np.where(
+                    (time_diffs > 0) & ~pd.isna(distances),
+                    distances / time_diffs,
+                    np.nan
+                )
+
                 df["calculated_speed"] = speeds
+
+                # Clean up temporary columns
+                df = df.drop(columns=["_prev_lat", "_prev_lon", "_prev_time"])
 
                 # Filter out points with unrealistic speeds
                 mask = pd.isna(df["calculated_speed"]) | (

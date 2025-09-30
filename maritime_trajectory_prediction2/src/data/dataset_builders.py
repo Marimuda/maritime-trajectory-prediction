@@ -184,6 +184,7 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
             center_lat = df["lat"].mean()
             center_lon = df["lon"].mean()
 
+            # Efficiently calculate distance using numpy broadcasting (no intermediate lists)
             df["spatial_distance_from_center"] = MaritimeUtils.calculate_distance(
                 df["lat"], df["lon"], center_lat, center_lon
             )
