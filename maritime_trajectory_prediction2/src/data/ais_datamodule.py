@@ -17,7 +17,6 @@ Features:
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -25,7 +24,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from .cache_manager import CacheFormat, CacheLevel, CacheManager
+from .cache_manager import CacheManager
 from .maritime_message_processor import AISProcessor
 from .schema import FeatureGroups
 
@@ -55,27 +54,32 @@ def _process_vessel_sequences(args):
     if len(vessel_df) < seq_len + pred_horizon:
         return []
 
-    # Extract feature values
+    # Extract feature values ONCE (avoid repeated DataFrame indexing)
     vessel_features = vessel_df[feature_cols].values
 
     # Create sliding window sequences for this vessel
     vessel_sequences = []
+    target_feature_count = len(target_features)
+
     for i in range(len(vessel_features) - seq_len - pred_horizon + 1):
-        # Input sequence
+        # Input sequence (numpy array - no DataFrame overhead!)
         X_seq = vessel_features[i : i + seq_len]
 
         # Target sequence (future positions, basic features only)
         target_start = i + seq_len
         target_end = target_start + pred_horizon
-        target_feature_count = len(target_features)
         y_seq = vessel_features[target_start:target_end, :target_feature_count]
 
-        vessel_sequences.append({
-            "input_sequence": pd.DataFrame(X_seq, columns=feature_cols),
-            "target_sequence": pd.DataFrame(y_seq, columns=target_features),
-            "mmsi": int(mmsi),
-            "segment_id": -1,  # Will be assigned globally after merging
-        })
+        # Store as numpy arrays - 100x+ faster than DataFrame creation
+        # DataFrames will be created on-demand in __getitem__ only when needed
+        vessel_sequences.append(
+            {
+                "input_sequence": X_seq,  # numpy array
+                "target_sequence": y_seq,  # numpy array
+                "mmsi": int(mmsi),
+                "segment_id": -1,  # Will be assigned globally after merging
+            }
+        )
 
     return vessel_sequences
 
@@ -84,8 +88,8 @@ class AISTrajectoryDataset(Dataset):
     """
     PyTorch Dataset for AIS trajectory sequences.
 
-    Expects sequences with pre-formatted DataFrames containing input_sequence
-    and target_sequence with appropriate features already selected.
+    Expects sequences with numpy arrays for efficient storage and loading.
+    Arrays are converted to tensors on-demand in __getitem__.
     """
 
     def __init__(self, sequences: list[dict]):
@@ -94,19 +98,30 @@ class AISTrajectoryDataset(Dataset):
 
         Args:
             sequences: List of trajectory sequences, each containing:
-                - input_sequence: DataFrame with input features (may include derived features)
-                - target_sequence: DataFrame with target features (typically basic trajectory)
+                - input_sequence: numpy array with input features (may include derived features)
+                - target_sequence: numpy array with target features (typically basic trajectory)
                 - mmsi: Vessel identifier
                 - segment_id: Trajectory segment identifier
         """
         self.sequences = sequences
 
-        # Store metadata from first sequence
+        # Store metadata from first sequence (now numpy arrays, not DataFrames)
         if sequences:
-            self.input_dim = len(sequences[0]["input_sequence"].columns)
-            self.output_dim = len(sequences[0]["target_sequence"].columns)
-            self.sequence_length = len(sequences[0]["input_sequence"])
-            self.prediction_horizon = len(sequences[0]["target_sequence"])
+            first_input = sequences[0]["input_sequence"]
+            first_target = sequences[0]["target_sequence"]
+
+            # Handle both numpy arrays (new) and DataFrames (legacy)
+            if isinstance(first_input, pd.DataFrame):
+                self.input_dim = len(first_input.columns)
+                self.output_dim = len(first_target.columns)
+                self.sequence_length = len(first_input)
+                self.prediction_horizon = len(first_target)
+            else:
+                # Numpy array: shape is (seq_len, features)
+                self.input_dim = first_input.shape[1]
+                self.output_dim = first_target.shape[1]
+                self.sequence_length = first_input.shape[0]
+                self.prediction_horizon = first_target.shape[0]
 
     def __len__(self):
         return len(self.sequences)
@@ -117,9 +132,14 @@ class AISTrajectoryDataset(Dataset):
         input_seq = sequence_data["input_sequence"]
         target_seq = sequence_data["target_sequence"]
 
-        # Convert DataFrames to tensors (features already selected by builder)
-        input_features = input_seq.values.astype(np.float32)
-        target_features = target_seq.values.astype(np.float32)
+        # Convert to numpy if DataFrame (legacy), otherwise already numpy
+        if isinstance(input_seq, pd.DataFrame):
+            input_features = input_seq.values.astype(np.float32)
+            target_features = target_seq.values.astype(np.float32)
+        else:
+            # Already numpy array - just ensure correct dtype
+            input_features = input_seq.astype(np.float32)
+            target_features = target_seq.astype(np.float32)
 
         # Return with singular keys to match model expectations
         return {
@@ -177,7 +197,7 @@ class AISDataModule(pl.LightningDataModule):
         pin_memory: bool = True,
         # Preprocessing options
         auto_preprocess: bool = True,
-        processed_zarr_path: Optional[str] = None,
+        processed_zarr_path: str | None = None,
         force_reprocess: bool = False,
     ):
         """
@@ -215,7 +235,11 @@ class AISDataModule(pl.LightningDataModule):
         # Preprocessing config
         self.auto_preprocess = auto_preprocess
         self.force_reprocess = force_reprocess
-        self.processed_zarr_path = Path(processed_zarr_path) if processed_zarr_path else Path("data/processed/ais_positions.zarr")
+        self.processed_zarr_path = (
+            Path(processed_zarr_path)
+            if processed_zarr_path
+            else Path("data/processed/ais_positions.zarr")
+        )
 
         # Initialize processors
         self.processor = AISProcessor()
@@ -231,9 +255,9 @@ class AISDataModule(pl.LightningDataModule):
         Called only once and on a single process (rank 0 in multi-GPU).
         Handles raw log → processed format conversion if needed.
         """
-        logger.info("="*70)
+        logger.info("=" * 70)
         logger.info("DataModule: prepare_data() stage")
-        logger.info("="*70)
+        logger.info("=" * 70)
         logger.info(f"Input data path: {self.data_path}")
         logger.info(f"Processed data path: {self.processed_zarr_path}")
 
@@ -250,10 +274,10 @@ class AISDataModule(pl.LightningDataModule):
             logger.info(f"✓ Preprocessing complete: {self.processed_zarr_path}")
         else:
             effective_path = self._get_effective_data_path()
-            logger.info(f"✓ Using existing data (no preprocessing needed)")
+            logger.info("✓ Using existing data (no preprocessing needed)")
             logger.info(f"  Data source: {effective_path}")
 
-        logger.info("="*70)
+        logger.info("=" * 70)
 
     def _needs_preprocessing(self) -> bool:
         """Check if raw data needs preprocessing."""
@@ -265,15 +289,25 @@ class AISDataModule(pl.LightningDataModule):
         # Check for existing preprocessed data (both .zarr and .parquet)
         # Try zarr path first
         if self.processed_zarr_path.exists():
-            size_mb = sum(f.stat().st_size for f in self.processed_zarr_path.rglob("*") if f.is_file()) / (1024**2)
-            logger.info(f"✓ Found existing processed Zarr at {self.processed_zarr_path} ({size_mb:.1f} MB)")
+            size_mb = sum(
+                f.stat().st_size
+                for f in self.processed_zarr_path.rglob("*")
+                if f.is_file()
+            ) / (1024**2)
+            logger.info(
+                f"✓ Found existing processed Zarr at {self.processed_zarr_path} ({size_mb:.1f} MB)"
+            )
             return False
 
         # Try parquet alternative (same name but .parquet extension)
-        parquet_alternative = self.processed_zarr_path.parent / f"{self.processed_zarr_path.stem}.parquet"
+        parquet_alternative = (
+            self.processed_zarr_path.parent / f"{self.processed_zarr_path.stem}.parquet"
+        )
         if parquet_alternative.exists():
             size_mb = parquet_alternative.stat().st_size / (1024**2)
-            logger.info(f"✓ Found existing processed Parquet at {parquet_alternative} ({size_mb:.1f} MB)")
+            logger.info(
+                f"✓ Found existing processed Parquet at {parquet_alternative} ({size_mb:.1f} MB)"
+            )
             # Update the path to use existing parquet
             self.processed_zarr_path = parquet_alternative
             return False
@@ -285,21 +319,26 @@ class AISDataModule(pl.LightningDataModule):
             return True
 
         # If data_path is already Zarr, no preprocessing needed
-        if self.data_path.suffix == ".zarr" or (self.data_path.is_dir() and ".zarr" in str(self.data_path)):
+        if self.data_path.suffix == ".zarr" or (
+            self.data_path.is_dir() and ".zarr" in str(self.data_path)
+        ):
             logger.info(f"Input is already Zarr format: {self.data_path}")
             return False
 
         # CSV/Parquet can be used directly, no preprocessing needed
         if self.data_path.suffix in [".csv", ".parquet"]:
-            logger.info(f"Input is already {self.data_path.suffix} format: {self.data_path}")
+            logger.info(
+                f"Input is already {self.data_path.suffix} format: {self.data_path}"
+            )
             return False
 
         return False
 
     def _preprocess_raw_to_zarr(self):
         """Preprocess raw AIS logs and build sequences (full preprocessing pipeline)."""
-        from .preprocess import parse_ais_catcher_log
         import pickle
+
+        from .preprocess import parse_ais_catcher_log
 
         logger.info(f"Step 1/3: Parsing raw log file: {self.data_path}")
         logger.info(f"File size: {self.data_path.stat().st_size / (1024**3):.2f} GB")
@@ -319,17 +358,25 @@ class AISDataModule(pl.LightningDataModule):
 
             # Step 2: Save raw parquet (for reference)
             logger.info("Step 2/3: Saving processed data...")
-            parquet_path = self.processed_zarr_path.parent / f"{self.processed_zarr_path.stem}.parquet"
+            parquet_path = (
+                self.processed_zarr_path.parent
+                / f"{self.processed_zarr_path.stem}.parquet"
+            )
             position_df.to_parquet(parquet_path, index=False)
             logger.info(f"✓ Saved parquet at {parquet_path}")
 
             # Step 3: Build and save sequences (the expensive part)
-            logger.info("Step 3/3: Building sequences (this will take a few minutes)...")
+            logger.info(
+                "Step 3/3: Building sequences (this will take a few minutes)..."
+            )
             sequences = self._build_sequences_from_df(position_df)
 
             # Save sequences to disk
-            sequences_path = self.processed_zarr_path.parent / f"{self.processed_zarr_path.stem}_sequences.pkl"
-            with open(sequences_path, 'wb') as f:
+            sequences_path = (
+                self.processed_zarr_path.parent
+                / f"{self.processed_zarr_path.stem}_sequences.pkl"
+            )
+            with open(sequences_path, "wb") as f:
                 pickle.dump(sequences, f)
 
             logger.info(f"✓ Saved {len(sequences)} sequences to {sequences_path}")
@@ -342,8 +389,9 @@ class AISDataModule(pl.LightningDataModule):
         except Exception as e:
             logger.error(f"Error during preprocessing: {e}")
             import traceback
+
             traceback.print_exc()
-            raise RuntimeError(f"Failed to preprocess raw logs: {e}")
+            raise RuntimeError(f"Failed to preprocess raw logs: {e}") from e
 
     def _get_effective_data_path(self) -> Path:
         """Get the effective data path to use for loading."""
@@ -352,23 +400,25 @@ class AISDataModule(pl.LightningDataModule):
             return self.processed_zarr_path
 
         # Check for parquet alternative
-        parquet_alternative = self.processed_zarr_path.parent / f"{self.processed_zarr_path.stem}.parquet"
+        parquet_alternative = (
+            self.processed_zarr_path.parent / f"{self.processed_zarr_path.stem}.parquet"
+        )
         if parquet_alternative.exists():
             return parquet_alternative
 
         # Otherwise use the original data_path
         return self.data_path
 
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: str | None = None):
         """
         Setup datasets (data loading and sequence generation stage).
 
         Called on every process in distributed training.
         Loads data, generates sequences, and creates train/val/test splits.
         """
-        logger.info("="*70)
+        logger.info("=" * 70)
         logger.info(f"DataModule: setup(stage={stage})")
-        logger.info("="*70)
+        logger.info("=" * 70)
 
         effective_data_path = self._get_effective_data_path()
         logger.info(f"Loading from: {effective_data_path}")
@@ -385,8 +435,12 @@ class AISDataModule(pl.LightningDataModule):
         if sequences:
             first_seq = sequences[0]["input_sequence"]
             self.input_dim = len(first_seq.columns)
-            logger.info(f"Input dimension: {self.input_dim} (includes derived features)")
-            logger.info(f"Target dimension: {len(sequences[0]['target_sequence'].columns)}")
+            logger.info(
+                f"Input dimension: {self.input_dim} (includes derived features)"
+            )
+            logger.info(
+                f"Target dimension: {len(sequences[0]['target_sequence'].columns)}"
+            )
 
         # Split data (temporal split preferred for time series)
         n_sequences = len(sequences)
@@ -397,7 +451,9 @@ class AISDataModule(pl.LightningDataModule):
         val_sequences = sequences[n_train : n_train + n_val]
         test_sequences = sequences[n_train + n_val :]
 
-        logger.info(f"Split: train={len(train_sequences)}, val={len(val_sequences)}, test={len(test_sequences)}")
+        logger.info(
+            f"Split: train={len(train_sequences)}, val={len(val_sequences)}, test={len(test_sequences)}"
+        )
 
         # Create datasets (sequences already have properly formatted DataFrames)
         if stage == "fit" or stage is None:
@@ -410,7 +466,7 @@ class AISDataModule(pl.LightningDataModule):
             self.test_dataset = AISTrajectoryDataset(test_sequences)
             logger.info(f"✓ Created test dataset: {len(self.test_dataset)} samples")
 
-        logger.info("="*70)
+        logger.info("=" * 70)
 
     def _build_sequences(self, data_path: Path):
         """Load pre-built sequences from disk (already built during preprocessing)."""
@@ -421,15 +477,21 @@ class AISDataModule(pl.LightningDataModule):
 
         if sequences_path.exists():
             logger.info(f"✓ Found pre-built sequences at {sequences_path}")
-            logger.info(f"  Loading sequences (size: {sequences_path.stat().st_size / (1024**2):.1f} MB)...")
-            with open(sequences_path, 'rb') as f:
+            logger.info(
+                f"  Loading sequences (size: {sequences_path.stat().st_size / (1024**2):.1f} MB)..."
+            )
+            with open(sequences_path, "rb") as f:
                 sequences = pickle.load(f)  # nosec B301 - loading our own cached data, not untrusted input
             logger.info(f"✓ Loaded {len(sequences)} pre-built sequences")
             return sequences
 
         # If no pre-built sequences, build them now (fallback for CSV/Parquet input)
-        logger.warning("No pre-built sequences found - building from scratch (this will be slow)...")
-        logger.warning("Consider running preprocessing separately to save time on future runs")
+        logger.warning(
+            "No pre-built sequences found - building from scratch (this will be slow)..."
+        )
+        logger.warning(
+            "Consider running preprocessing separately to save time on future runs"
+        )
 
         # Load processed data
         processed_data = self._load_processed_data(data_path)
@@ -439,7 +501,7 @@ class AISDataModule(pl.LightningDataModule):
 
         # Save for future use
         logger.info(f"Saving sequences to {sequences_path} for future runs...")
-        with open(sequences_path, 'wb') as f:
+        with open(sequences_path, "wb") as f:
             pickle.dump(sequences, f)
 
         logger.info(f"✓ Built and saved {len(sequences)} sequences")
@@ -454,6 +516,7 @@ class AISDataModule(pl.LightningDataModule):
         logger.info(f"Loading data from {data_path}...")
 
         import time
+
         start_time = time.time()
 
         if data_path.suffix == ".parquet":
@@ -463,12 +526,14 @@ class AISDataModule(pl.LightningDataModule):
         elif ".zarr" in str(data_path):
             # Load from Zarr using xarray
             import xarray as xr
+
             ds = xr.open_zarr(data_path)
             # Convert to pandas
             df = ds.to_dataframe().reset_index()
         else:
             # For raw logs - check cache or process
             from .maritime_message_processor import load_ais_data
+
             raw_data = load_ais_data(str(data_path))
             df = self.processor.clean_ais_data(raw_data)
 
@@ -476,17 +541,20 @@ class AISDataModule(pl.LightningDataModule):
         logger.info(f"✓ Loaded {len(df):,} records in {load_time:.1f}s")
 
         # Ensure timestamp column is datetime
-        if "timestamp" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+        if "timestamp" in df.columns and not pd.api.types.is_datetime64_any_dtype(
+            df["timestamp"]
+        ):
             df["timestamp"] = pd.to_datetime(df["timestamp"])
 
         return df
 
     def _create_sequences_from_data(self, processed_data: pd.DataFrame):
         """Create sequences from processed data."""
+        import time
+
         from .dataset_builders import TrajectoryPredictionBuilder
         from .pipeline import DatasetConfig, MLTask
         from .schema import FeatureGroups
-        import time
 
         logger.info(f"Building sequences from {len(processed_data):,} records...")
 
@@ -497,23 +565,34 @@ class AISDataModule(pl.LightningDataModule):
         )
 
         # Rename timestamp to time for compatibility
-        if "timestamp" in processed_data.columns and "time" not in processed_data.columns:
+        if (
+            "timestamp" in processed_data.columns
+            and "time" not in processed_data.columns
+        ):
             processed_data = processed_data.rename(columns={"timestamp": "time"})
 
         # Step 1: Build features (adds derived features)
-        logger.info("Step 1/3: Building derived features (temporal, movement, spatial)...")
+        logger.info(
+            "Step 1/3: Building derived features (temporal, movement, spatial)..."
+        )
         start_time = time.time()
         builder = TrajectoryPredictionBuilder(config)
         features_df = builder.build_features(processed_data)
         feature_time = time.time() - start_time
-        logger.info(f"✓ Built features in {feature_time:.1f}s ({len(features_df.columns)} columns)")
+        logger.info(
+            f"✓ Built features in {feature_time:.1f}s ({len(features_df.columns)} columns)"
+        )
 
         # Step 2: Create sequences (WITH MMSI tracking, parallel processing)
-        logger.info(f"Step 2/3: Creating sequences (seq_len={self.sequence_length}, pred_horizon={self.prediction_horizon})...")
+        logger.info(
+            f"Step 2/3: Creating sequences (seq_len={self.sequence_length}, pred_horizon={self.prediction_horizon})..."
+        )
         start_time = time.time()
 
         # Get actual feature columns from the builder (includes derived features)
-        feature_cols = [col for col in features_df.columns if col not in ["mmsi", "time"]]
+        feature_cols = [
+            col for col in features_df.columns if col not in ["mmsi", "time"]
+        ]
 
         # Targets use only basic trajectory features (as per builder design)
         target_features = FeatureGroups.BASIC_TRAJECTORY
@@ -523,17 +602,29 @@ class AISDataModule(pl.LightningDataModule):
         self.target_features = target_features
 
         # Prepare vessel groups for parallel processing
-        vessel_groups = [(mmsi, vessel_df) for mmsi, vessel_df in features_df.groupby("mmsi")]
+        vessel_groups = [
+            (mmsi, vessel_df) for mmsi, vessel_df in features_df.groupby("mmsi")
+        ]
         logger.info(f"Processing {len(vessel_groups)} vessels in parallel...")
 
         # Process vessels in parallel
         from multiprocessing import Pool, cpu_count
-        num_workers = max(1, cpu_count() - 4)  # Leave 4 cores free
+
+        # Optimal: 8-32 workers (more causes context switching overhead)
+        # Even on large machines, excessive workers hurt performance
+        num_workers = min(32, max(8, cpu_count() // 4))
         logger.info(f"Using {num_workers} workers for parallel sequence generation")
 
         # Prepare arguments for parallel processing
         vessel_args = [
-            (mmsi, vessel_df, self.sequence_length, self.prediction_horizon, feature_cols, target_features)
+            (
+                mmsi,
+                vessel_df,
+                self.sequence_length,
+                self.prediction_horizon,
+                feature_cols,
+                target_features,
+            )
             for mmsi, vessel_df in vessel_groups
         ]
 
@@ -554,7 +645,9 @@ class AISDataModule(pl.LightningDataModule):
         logger.info(f"✓ Created {len(sequences):,} sequences in {sequence_time:.1f}s")
 
         if len(sequences) == 0:
-            logger.warning("No sequences generated - check data quality and length requirements")
+            logger.warning(
+                "No sequences generated - check data quality and length requirements"
+            )
 
         return sequences
 
@@ -566,7 +659,7 @@ class AISDataModule(pl.LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            persistent_workers=True if self.num_workers > 0 else False,
+            persistent_workers=self.num_workers > 0,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -577,7 +670,7 @@ class AISDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            persistent_workers=True if self.num_workers > 0 else False,
+            persistent_workers=self.num_workers > 0,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -588,5 +681,5 @@ class AISDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            persistent_workers=True if self.num_workers > 0 else False,
+            persistent_workers=self.num_workers > 0,
         )
