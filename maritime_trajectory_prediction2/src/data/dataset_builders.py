@@ -438,21 +438,344 @@ class GraphNetworkBuilder(BaseDatasetBuilder):
         return df
 
     def _add_edge_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add edge-specific features."""
-        # Distance-based edge features
-        df["edge_proximity"] = 0.0  # Placeholder
+        """
+        Add edge-specific features (per-node aggregates of edge properties).
+
+        For each vessel, calculates aggregate metrics of its edges to nearby vessels:
+        - Average distance to nearby vessels
+        - Minimum distance to any vessel
+        - Average relative velocity magnitude
+        - Minimum TCPA to any vessel
+        - Number of connections (degree)
+        """
+        from src.maritime.cpa_tcpa import CPACalculator, VesselState
+
+        calculator = CPACalculator(
+            cpa_warning_threshold=500.0,
+            tcpa_warning_threshold=600.0,
+        )
+
+        # Sort and create time buckets
+        df = df.sort_values(["time"]).copy()
+        df["_time_bucket"] = df["time"].dt.floor("1min")
+
+        # Initialize edge feature columns
+        df["edge_avg_distance"] = float("inf")
+        df["edge_min_distance"] = float("inf")
+        df["edge_avg_rel_velocity"] = 0.0
+        df["edge_min_tcpa"] = float("inf")
+        df["edge_degree"] = 0
+
+        self.logger.info(
+            f"  → Calculating edge features for {len(df):,} records..."
+        )
+
+        # Process each time bucket
+        MIN_VESSELS_FOR_EDGES = 2
+        PROXIMITY_THRESHOLD_NM = 10.0
+
+        for _time_bucket, bucket_df in df.groupby("_time_bucket"):
+            if len(bucket_df) < MIN_VESSELS_FOR_EDGES:
+                continue
+
+            # For each vessel in this time window
+            for idx, row in bucket_df.iterrows():
+                if not all(
+                    pd.notna(row[col]) for col in ["lat", "lon", "sog", "cog"]
+                ):
+                    continue
+
+                vessel1 = VesselState(
+                    lat=row["lat"],
+                    lon=row["lon"],
+                    sog=row["sog"],
+                    cog=row["cog"],
+                    timestamp=row["time"],
+                )
+
+                # Find nearby vessels
+                distances = []
+                rel_velocities = []
+                tcpa_times = []
+
+                for idx2, row2 in bucket_df.iterrows():
+                    if idx == idx2:
+                        continue
+
+                    if not all(
+                        pd.notna(row2[col]) for col in ["lat", "lon", "sog", "cog"]
+                    ):
+                        continue
+
+                    # Calculate distance
+                    distance = MaritimeUtils.calculate_distance(
+                        row["lat"], row["lon"], row2["lat"], row2["lon"]
+                    )
+
+                    if distance < PROXIMITY_THRESHOLD_NM:
+                        vessel2 = VesselState(
+                            lat=row2["lat"],
+                            lon=row2["lon"],
+                            sog=row2["sog"],
+                            cog=row2["cog"],
+                            timestamp=row2["time"],
+                        )
+
+                        distances.append(distance)
+
+                        # Calculate relative velocity
+                        v1x = vessel1.sog * np.cos(np.radians(vessel1.cog))
+                        v1y = vessel1.sog * np.sin(np.radians(vessel1.cog))
+                        v2x = vessel2.sog * np.cos(np.radians(vessel2.cog))
+                        v2y = vessel2.sog * np.sin(np.radians(vessel2.cog))
+                        rel_vel = np.sqrt((v2x - v1x) ** 2 + (v2y - v1y) ** 2)
+                        rel_velocities.append(rel_vel)
+
+                        # Calculate TCPA
+                        cpa_result = calculator.calculate_cpa_tcpa_basic(vessel1, vessel2)
+                        if cpa_result.tcpa_time > 0:
+                            tcpa_times.append(cpa_result.tcpa_time)
+
+                if distances:
+                    df.loc[idx, "edge_avg_distance"] = np.mean(distances)
+                    df.loc[idx, "edge_min_distance"] = np.min(distances)
+                    df.loc[idx, "edge_degree"] = len(distances)
+
+                if rel_velocities:
+                    df.loc[idx, "edge_avg_rel_velocity"] = np.mean(rel_velocities)
+
+                if tcpa_times:
+                    df.loc[idx, "edge_min_tcpa"] = np.min(tcpa_times)
+
+        # Clean up temporary column
+        df = df.drop(columns=["_time_bucket"])
+
+        self.logger.info(
+            f"    ✓ Edge features calculated "
+            f"(avg degree: {df['edge_degree'].mean():.1f})"
+        )
+
         return df
 
     def _add_graph_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add graph-level features."""
-        # Graph density, clustering, etc.
-        df["graph_density"] = 0.0  # Placeholder
+        """
+        Add graph-level features (global properties of vessel network).
+
+        For each time bucket, calculates graph metrics and assigns to all vessels:
+        - Graph density: ratio of actual edges to possible edges
+        - Average degree: mean number of connections per vessel
+        - Clustering coefficient: measure of network clustering
+        """
+        # Sort and create time buckets
+        df = df.sort_values(["time"]).copy()
+        df["_time_bucket"] = df["time"].dt.floor("1min")
+
+        # Initialize graph feature columns
+        df["graph_density"] = 0.0
+        df["graph_avg_degree"] = 0.0
+        df["graph_clustering"] = 0.0
+
+        self.logger.info(
+            f"  → Calculating graph features for {len(df):,} records..."
+        )
+
+        # Process each time bucket
+        MIN_VESSELS_FOR_GRAPH = 3  # Need at least 3 vessels for meaningful metrics
+        PROXIMITY_THRESHOLD_NM = 10.0
+
+        for _time_bucket, bucket_df in df.groupby("_time_bucket"):
+            if len(bucket_df) < MIN_VESSELS_FOR_GRAPH:
+                continue
+
+            # Build adjacency matrix for this time bucket
+            n_vessels = len(bucket_df)
+            adjacency = np.zeros((n_vessels, n_vessels))
+
+            # Get positions
+            positions = []
+            for idx, row in bucket_df.iterrows():
+                if all(pd.notna(row[col]) for col in ["lat", "lon"]):
+                    positions.append((idx, row["lat"], row["lon"]))
+
+            # Calculate pairwise distances and build adjacency
+            for i, (idx1, lat1, lon1) in enumerate(positions):
+                for j, (idx2, lat2, lon2) in enumerate(positions):
+                    if i >= j:  # Skip self and duplicates
+                        continue
+
+                    distance = MaritimeUtils.calculate_distance(lat1, lon1, lat2, lon2)
+
+                    if distance < PROXIMITY_THRESHOLD_NM:
+                        adjacency[i, j] = 1
+                        adjacency[j, i] = 1  # Undirected graph
+
+            # Calculate graph metrics
+            num_edges = np.sum(adjacency) / 2  # Divide by 2 for undirected
+            max_edges = n_vessels * (n_vessels - 1) / 2
+
+            # Graph density: ratio of edges to maximum possible edges
+            density = num_edges / max_edges if max_edges > 0 else 0.0
+
+            # Average degree: average number of connections per node
+            degrees = np.sum(adjacency, axis=1)
+            avg_degree = np.mean(degrees)
+
+            # Clustering coefficient: fraction of triangles (approximation)
+            # For each node, what fraction of its neighbors are connected?
+            clustering_coeffs = []
+            for i in range(n_vessels):
+                neighbors = np.where(adjacency[i] > 0)[0]
+                k = len(neighbors)
+
+                if k < 2:
+                    clustering_coeffs.append(0.0)
+                    continue
+
+                # Count connections among neighbors
+                neighbor_connections = 0
+                for n1 in neighbors:
+                    for n2 in neighbors:
+                        if n1 < n2 and adjacency[n1, n2] > 0:
+                            neighbor_connections += 1
+
+                # Local clustering coefficient
+                max_neighbor_connections = k * (k - 1) / 2
+                local_clustering = neighbor_connections / max_neighbor_connections if max_neighbor_connections > 0 else 0.0
+                clustering_coeffs.append(local_clustering)
+
+            avg_clustering = np.mean(clustering_coeffs)
+
+            # Assign graph metrics to all vessels in this time bucket
+            for idx in bucket_df.index:
+                df.loc[idx, "graph_density"] = density
+                df.loc[idx, "graph_avg_degree"] = avg_degree
+                df.loc[idx, "graph_clustering"] = avg_clustering
+
+        # Clean up temporary column
+        df = df.drop(columns=["_time_bucket"])
+
+        self.logger.info(
+            f"    ✓ Graph features calculated "
+            f"(avg density: {df['graph_density'].mean():.3f})"
+        )
+
         return df
 
     def _calculate_interaction_scores(self, df: pd.DataFrame) -> pd.Series:
-        """Calculate vessel interaction scores."""
-        # Simplified interaction scoring
-        return pd.Series(0.0, index=df.index)
+        """
+        Calculate vessel interaction scores based on proximity and CPA.
+
+        Interaction strength is based on:
+        - Inverse distance (closer vessels = higher interaction)
+        - CPA distance (vessels on collision course = higher interaction)
+
+        Returns a score between 0 and 1, where:
+        - 1.0: Very close vessels with low CPA (strong interaction)
+        - 0.0: Distant vessels with high CPA (no interaction)
+        """
+        from src.maritime.cpa_tcpa import CPACalculator, VesselState
+
+        calculator = CPACalculator(
+            cpa_warning_threshold=500.0,
+            tcpa_warning_threshold=600.0,
+        )
+
+        # Sort and create time buckets
+        df = df.sort_values(["time"]).copy()
+        df["_time_bucket"] = df["time"].dt.floor("1min")
+
+        # Initialize interaction scores
+        interaction_scores = pd.Series(0.0, index=df.index)
+
+        self.logger.info(
+            f"  → Calculating interaction scores for {len(df):,} records..."
+        )
+
+        # Process each time bucket
+        MIN_VESSELS_FOR_INTERACTION = 2
+        PROXIMITY_THRESHOLD_NM = 10.0
+
+        for _time_bucket, bucket_df in df.groupby("_time_bucket"):
+            if len(bucket_df) < MIN_VESSELS_FOR_INTERACTION:
+                continue
+
+            # For each vessel, calculate interaction with nearest vessel
+            for idx, row in bucket_df.iterrows():
+                if not all(
+                    pd.notna(row[col]) for col in ["lat", "lon", "sog", "cog"]
+                ):
+                    continue
+
+                vessel1 = VesselState(
+                    lat=row["lat"],
+                    lon=row["lon"],
+                    sog=row["sog"],
+                    cog=row["cog"],
+                    timestamp=row["time"],
+                )
+
+                min_distance = float("inf")
+                min_cpa = float("inf")
+
+                # Find closest vessel and CPA
+                for idx2, row2 in bucket_df.iterrows():
+                    if idx == idx2:
+                        continue
+
+                    if not all(
+                        pd.notna(row2[col]) for col in ["lat", "lon", "sog", "cog"]
+                    ):
+                        continue
+
+                    # Calculate current distance
+                    distance = MaritimeUtils.calculate_distance(
+                        row["lat"], row["lon"], row2["lat"], row2["lon"]
+                    )
+
+                    if distance < PROXIMITY_THRESHOLD_NM:
+                        vessel2 = VesselState(
+                            lat=row2["lat"],
+                            lon=row2["lon"],
+                            sog=row2["sog"],
+                            cog=row2["cog"],
+                            timestamp=row2["time"],
+                        )
+
+                        # Calculate CPA
+                        cpa_result = calculator.calculate_cpa_tcpa_basic(vessel1, vessel2)
+
+                        if distance < min_distance:
+                            min_distance = distance
+                            min_cpa = cpa_result.cpa_distance
+
+                # Calculate interaction score
+                if min_distance < float("inf"):
+                    # Inverse distance component (0-1, closer = higher)
+                    # Normalize by threshold distance
+                    distance_score = 1.0 - (min_distance / PROXIMITY_THRESHOLD_NM)
+                    distance_score = max(0.0, min(1.0, distance_score))
+
+                    # CPA component (0-1, lower CPA = higher score)
+                    # Normalize by CPA warning threshold (500m = 0.27 NM)
+                    CPA_THRESHOLD_NM = 0.27
+                    if min_cpa < float("inf"):
+                        cpa_score = 1.0 - (min_cpa / CPA_THRESHOLD_NM)
+                        cpa_score = max(0.0, min(1.0, cpa_score))
+                    else:
+                        cpa_score = 0.0
+
+                    # Combine scores (weighted average)
+                    # Give more weight to current distance than predicted CPA
+                    interaction_score = 0.6 * distance_score + 0.4 * cpa_score
+
+                    interaction_scores[idx] = interaction_score
+
+        self.logger.info(
+            f"    ✓ Interaction scores calculated "
+            f"(avg score: {interaction_scores.mean():.3f})"
+        )
+
+        return interaction_scores
 
     def _create_node_features(self, df: pd.DataFrame) -> np.ndarray:
         """Create node feature matrix."""
@@ -648,9 +971,7 @@ class CollisionAvoidanceBuilder(BaseDatasetBuilder):
 
             # For each vessel in this time window
             for idx, row in bucket_df.iterrows():
-                if not all(
-                    pd.notna(row[col]) for col in ["lat", "lon", "sog", "cog"]
-                ):
+                if not all(pd.notna(row[col]) for col in ["lat", "lon", "sog", "cog"]):
                     continue  # Skip if missing required data
 
                 vessel1 = VesselState(
@@ -699,9 +1020,7 @@ class CollisionAvoidanceBuilder(BaseDatasetBuilder):
 
                     # Extract CPA distances and TCPA times
                     cpa_distances = [r.cpa_distance for r in cpa_results]
-                    tcpa_times = [
-                        r.tcpa_time for r in cpa_results if r.tcpa_time > 0
-                    ]
+                    tcpa_times = [r.tcpa_time for r in cpa_results if r.tcpa_time > 0]
 
                     min_cpa = min(cpa_distances)
                     min_tcpa = min(tcpa_times) if tcpa_times else float("inf")
