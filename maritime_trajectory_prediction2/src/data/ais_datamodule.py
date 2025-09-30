@@ -430,13 +430,21 @@ class AISDataModule(pl.LightningDataModule):
         # Store input dimension for model configuration (from actual input features)
         if sequences:
             first_seq = sequences[0]["input_sequence"]
-            self.input_dim = len(first_seq.columns)
+            first_target = sequences[0]["target_sequence"]
+
+            # Handle both numpy arrays (new) and DataFrames (legacy)
+            if isinstance(first_seq, pd.DataFrame):
+                self.input_dim = len(first_seq.columns)
+                target_dim = len(first_target.columns)
+            else:
+                # Numpy array: shape is (seq_len, features)
+                self.input_dim = first_seq.shape[1]
+                target_dim = first_target.shape[1]
+
             logger.info(
                 f"Input dimension: {self.input_dim} (includes derived features)"
             )
-            logger.info(
-                f"Target dimension: {len(sequences[0]['target_sequence'].columns)}"
-            )
+            logger.info(f"Target dimension: {target_dim}")
 
         # Split data (temporal split preferred for time series)
         n_sequences = len(sequences)
