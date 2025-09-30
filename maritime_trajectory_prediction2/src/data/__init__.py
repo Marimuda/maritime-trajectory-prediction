@@ -40,12 +40,18 @@ __all__ = [
     "QualityChecker",
     "DatasetExporter",
     "ValidationResult",
+    # DataModules
+    "AISDataModule",
 ]
 
 
 # Lazy loading for heavy components
 def __getattr__(name):
-    if name == "xarray_processor":
+    if name == "AISDataModule":
+        from .ais_datamodule import AISDataModule
+
+        return AISDataModule
+    elif name == "xarray_processor":
         from .xarray_processor import AISDataProcessor
 
         return AISDataProcessor
