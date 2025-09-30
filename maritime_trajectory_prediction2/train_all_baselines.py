@@ -233,20 +233,21 @@ class BaselineTrainer:
         logger.info("Initializing physics-based models...")
 
         # Kalman Filter variants
+        # Note: prediction_horizon must match data module (10 steps ahead)
+        # Kalman filters don't use learning_rate, dim_x, or dim_z parameters
+        # State dimensions are determined by the motion model type
         models["kalman_cv"] = {
-            "model": create_cv_lightning(dim_x=4, dim_z=2, dt=1.0, learning_rate=1e-3),
+            "model": create_cv_lightning(prediction_horizon=10),
             "type": "lightning",
         }
 
         models["kalman_ct"] = {
-            "model": create_ct_lightning(dim_x=5, dim_z=2, dt=1.0, learning_rate=1e-3),
+            "model": create_ct_lightning(prediction_horizon=10),
             "type": "lightning",
         }
 
         models["kalman_imm"] = {
-            "model": create_imm_lightning(
-                models=["cv", "ct", "ca"], dt=1.0, learning_rate=1e-3
-            ),
+            "model": create_imm_lightning(prediction_horizon=10),
             "type": "lightning",
         }
 
@@ -389,25 +390,30 @@ class BaselineTrainer:
         # Callbacks
         callbacks = []
 
+        # Checkpoint callback - monitors val_loss for all models
         checkpoint_callback = ModelCheckpoint(
             dirpath=self.config.checkpoint_dir / model_name,
-            filename="{epoch:03d}-{val_loss:.4f}" if not is_kalman else "{epoch:03d}",
-            monitor="val_loss" if not is_kalman else None,
+            filename="{epoch:03d}-{val_loss:.4f}",
+            monitor="val_loss",
             mode="min",
             save_top_k=1,
             save_last=True,
         )
         callbacks.append(checkpoint_callback)
 
-        # Only add early stopping for non-Kalman models
+        # Early stopping - only for gradient-based models
+        # Kalman filters don't improve over epochs (fitting happens immediately)
         if not is_kalman:
             early_stopping = EarlyStopping(
                 monitor="val_loss", patience=10, mode="min", verbose=True
             )
             callbacks.append(early_stopping)
 
-        lr_monitor = LearningRateMonitor(logging_interval="epoch")
-        callbacks.append(lr_monitor)
+        # Learning rate monitor - only for gradient-based models
+        # Kalman filters have no optimizer, so no learning rate to monitor
+        if not is_kalman:
+            lr_monitor = LearningRateMonitor(logging_interval="epoch")
+            callbacks.append(lr_monitor)
 
         # Loggers
         tb_logger = TensorBoardLogger(
@@ -418,11 +424,9 @@ class BaselineTrainer:
             save_dir=self.config.logs_dir, name=model_name, version=None
         )
 
-        # Trainer
-        # Kalman filters need at least 2 epochs (1 to collect data, 1+ to validate)
-        max_epochs = (
-            max(2, self.config.max_epochs) if is_kalman else self.config.max_epochs
-        )
+        # Trainer - Kalman models only need 1 epoch (auto-fit on first batch)
+        # Neural models need full training
+        max_epochs = 1 if is_kalman else self.config.max_epochs
 
         trainer = Trainer(
             max_epochs=max_epochs,
