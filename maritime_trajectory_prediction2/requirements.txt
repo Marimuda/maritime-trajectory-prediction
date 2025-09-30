@@ -19,6 +19,11 @@ filterpy>=1.4.5
 # Geospatial
 geopy>=2.3.0
 
+# M2.2: Maritime domain validation
+pyproj>=3.5.0          # Geodetic coordinate transformations
+shapely>=2.0.0          # Geometric operations for COLREGS
+networkx>=3.1           # Graph analysis for encounter classification
+
 # Fast JSON parsing
 orjson>=3.8.0
 
