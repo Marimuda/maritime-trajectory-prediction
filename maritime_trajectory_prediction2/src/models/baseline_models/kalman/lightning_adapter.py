@@ -288,11 +288,26 @@ class KalmanBaselineLightning(pl.LightningModule):
                 # Match targets to prediction length
                 targets = target_latlon[:actual_horizon]  # (actual_horizon, 2)
 
-                # Calculate MSE in geographic degrees (will fix in next commit with proper Haversine)
-                # TODO: This uses Euclidean distance in degrees - not accurate for maritime!
-                # Will be fixed in Fix 2 to use proper Haversine distance
-                mse = np.mean((predictions - targets) ** 2)
-                total_loss += mse
+                # Calculate proper maritime distance using Haversine formula
+                # Import here to avoid circular dependencies
+                from src.utils.maritime_utils import MaritimeUtils
+
+                # Calculate distance for each predicted point (vectorized)
+                distances_nm = np.array(
+                    [
+                        MaritimeUtils.calculate_distance(
+                            pred[0], pred[1], tgt[0], tgt[1]
+                        )
+                        for pred, tgt in zip(predictions, targets, strict=False)
+                    ]
+                )
+
+                # Convert nautical miles to meters (1 NM = 1852 meters)
+                distances_m = distances_nm * 1852.0
+
+                # Calculate MSE in meters squared
+                mse_m2 = np.mean(distances_m**2)
+                total_loss += mse_m2
                 n_predictions += 1
 
             except Exception as e:
@@ -302,10 +317,18 @@ class KalmanBaselineLightning(pl.LightningModule):
                 continue
 
         if n_predictions > 0:
-            avg_loss = total_loss / n_predictions
-            self.log("val_loss", avg_loss, prog_bar=True)
+            # Average MSE in meters squared
+            avg_mse_m2 = total_loss / n_predictions
+
+            # Calculate RMSE in meters (more interpretable)
+            rmse_m = np.sqrt(avg_mse_m2)
+
+            # Log both MSE and RMSE for completeness
+            self.log("val_loss", avg_mse_m2, prog_bar=False)  # MSE for Lightning
+            self.log("val_rmse_m", rmse_m, prog_bar=True)  # RMSE for humans
             self.log("val_n_predictions", float(n_predictions), prog_bar=False)
-            return {"val_loss": avg_loss}
+
+            return {"val_loss": avg_mse_m2, "val_rmse_m": rmse_m}
         else:
             # No valid predictions - return None instead of dummy value
             return None
