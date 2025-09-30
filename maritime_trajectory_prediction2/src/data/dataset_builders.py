@@ -19,6 +19,9 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
 
     def build_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Build features for trajectory prediction."""
+        import time
+
+        self.logger.info(f"Building features from {len(df):,} records...")
         features_df = df.copy()
 
         # Core position and movement features
@@ -26,10 +29,23 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
             :6
         ]  # lat, lon, sog, cog, heading, turn
 
-        # Add derived features
+        # Add derived features with timing
+        start = time.time()
+        self.logger.info("  → Adding temporal features (hour, day, month)...")
         features_df = self._add_temporal_features(features_df)
+        self.logger.info(f"    ✓ Temporal features added in {time.time()-start:.1f}s")
+
+        start = time.time()
+        self.logger.info(
+            "  → Adding movement features (speed change, course change, distance)..."
+        )
         features_df = self._add_movement_features(features_df)
+        self.logger.info(f"    ✓ Movement features added in {time.time()-start:.1f}s")
+
+        start = time.time()
+        self.logger.info("  → Adding spatial features (distance from center)...")
         features_df = self._add_spatial_features(features_df)
+        self.logger.info(f"    ✓ Spatial features added in {time.time()-start:.1f}s")
 
         # Select and order features
         available_features = [
@@ -42,6 +58,7 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
         ]
 
         final_features = available_features + derived_features
+        self.logger.info(f"  ✓ Total features: {len(final_features)} columns")
         return features_df[["mmsi", "time"] + final_features]
 
     def build_targets(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -57,8 +74,8 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
         sequences_y = []
 
         # Group by vessel
-        for mmsi, vessel_df in features_df.groupby("mmsi"):
-            vessel_df = vessel_df.sort_values("time").reset_index(drop=True)
+        for _mmsi, vessel_data in features_df.groupby("mmsi"):
+            vessel_df = vessel_data.sort_values("time").reset_index(drop=True)
 
             if (
                 len(vessel_df)
@@ -112,34 +129,51 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
         return df
 
     def _add_movement_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add movement-derived features."""
-        # Speed change rate
+        """Add movement-derived features (VECTORIZED for performance)."""
+        import numpy as np
+
+        # Speed change rate (already vectorized - pandas groupby().diff())
         if "sog" in df.columns:
             df["movement_speed_change"] = df.groupby("mmsi")["sog"].diff()
 
-        # Course change rate
+        # Course change rate (already vectorized)
         if "cog" in df.columns:
             df["movement_course_change"] = df.groupby("mmsi")["cog"].diff()
 
-        # Distance traveled
+        # Distance traveled (VECTORIZED version - massive speedup!)
         if all(col in df.columns for col in ["lat", "lon"]):
-            df["movement_distance"] = 0.0
-            for _, vessel_df in df.groupby("mmsi"):
-                if len(vessel_df) > 1:
-                    # Calculate distances between consecutive points
-                    distances = []
-                    for i in range(1, len(vessel_df)):
-                        dist = MaritimeUtils.calculate_distance(
-                            vessel_df.iloc[i - 1]["lat"],
-                            vessel_df.iloc[i - 1]["lon"],
-                            vessel_df.iloc[i]["lat"],
-                            vessel_df.iloc[i]["lon"],
-                        )
-                        distances.append(dist)
+            # Sort by vessel and time to ensure consecutive points
+            df = df.sort_values(["mmsi", "time"]).reset_index(drop=True)
 
-                    # First point has 0 distance
-                    all_distances = [0.0] + distances
-                    df.loc[vessel_df.index, "movement_distance"] = all_distances
+            # Shift coordinates to get previous points (vectorized!)
+            df["_prev_lat"] = df.groupby("mmsi")["lat"].shift(1)
+            df["_prev_lon"] = df.groupby("mmsi")["lon"].shift(1)
+
+            # Vectorized Haversine distance calculation
+            # Formula: d = 2 * R * arcsin(sqrt(sin²((lat2-lat1)/2) + cos(lat1)*cos(lat2)*sin²((lon2-lon1)/2)))
+            R = 6371.0  # Earth radius in km
+
+            # Convert to radians (vectorized)
+            lat1 = np.radians(df["_prev_lat"])
+            lon1 = np.radians(df["_prev_lon"])
+            lat2 = np.radians(df["lat"])
+            lon2 = np.radians(df["lon"])
+
+            # Haversine formula (all vectorized operations!)
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = (
+                np.sin(dlat / 2) ** 2
+                + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+            )
+            c = 2 * np.arcsin(np.sqrt(a))
+            distance = R * c
+
+            # First point in each vessel has no previous point (NaN -> 0)
+            df["movement_distance"] = distance.fillna(0.0)
+
+            # Clean up temporary columns
+            df = df.drop(columns=["_prev_lat", "_prev_lon"])
 
         return df
 
@@ -158,7 +192,13 @@ class TrajectoryPredictionBuilder(BaseDatasetBuilder):
 
 
 class AnomalyDetectionBuilder(BaseDatasetBuilder):
-    """Dataset builder for maritime anomaly detection."""
+    """
+    Dataset builder for maritime anomaly detection using unsupervised learning.
+
+    This builder creates sequences for autoencoder-based anomaly detection,
+    where the model learns to reconstruct normal behavior. Anomalies are
+    detected by reconstruction error, not hard-coded rules.
+    """
 
     def build_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Build features for anomaly detection."""
@@ -199,38 +239,35 @@ class AnomalyDetectionBuilder(BaseDatasetBuilder):
         return features_df[["mmsi", "time"] + final_features]
 
     def build_targets(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Build targets for anomaly detection (anomaly labels)."""
-        targets_df = df[["mmsi", "time"]].copy()
+        """
+        Build targets for unsupervised anomaly detection.
 
-        # Create synthetic anomaly labels based on heuristics
-        targets_df["anomaly_speed"] = self._detect_speed_anomalies(df)
-        targets_df["anomaly_course"] = self._detect_course_anomalies(df)
-        targets_df["anomaly_position"] = self._detect_position_anomalies(df)
-        targets_df["anomaly_overall"] = (
-            targets_df["anomaly_speed"]
-            | targets_df["anomaly_course"]
-            | targets_df["anomaly_position"]
-        )
+        For autoencoder-based anomaly detection, the target is the input itself
+        (reconstruction task). The model learns to reconstruct normal patterns,
+        and anomalies are detected by high reconstruction error.
 
-        return targets_df
+        Returns:
+            DataFrame with same features as input (for reconstruction)
+        """
+        # For unsupervised anomaly detection (autoencoders), target = input
+        # The model learns to reconstruct normal behavior
+        return df.copy()
 
     def create_sequences(
         self, features_df: pd.DataFrame
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Create sequences for anomaly detection."""
+        """
+        Create sequences for unsupervised anomaly detection.
+
+        For autoencoders, both input (X) and target (y) are the same sequences.
+        The model learns to reconstruct the input, and anomalies are detected
+        by high reconstruction error during inference.
+        """
         sequences_X = []
         sequences_y = []
 
-        # Build targets
-        targets_df = self.build_targets(features_df)
-
-        for mmsi, vessel_df in features_df.groupby("mmsi"):
-            vessel_df = vessel_df.sort_values("time").reset_index(drop=True)
-            vessel_targets = (
-                targets_df[targets_df["mmsi"] == mmsi]
-                .sort_values("time")
-                .reset_index(drop=True)
-            )
+        for _mmsi, vessel_data in features_df.groupby("mmsi"):
+            vessel_df = vessel_data.sort_values("time").reset_index(drop=True)
 
             if len(vessel_df) < self.config.sequence_length:
                 continue
@@ -241,16 +278,10 @@ class AnomalyDetectionBuilder(BaseDatasetBuilder):
             ]
             vessel_features = vessel_df[feature_cols].values
 
-            # Extract target columns
-            target_cols = ["anomaly_overall"]
-            vessel_targets_values = vessel_targets[target_cols].values
-
-            # Create sequences
+            # Create sequences where target = input (reconstruction)
             for i in range(len(vessel_features) - self.config.sequence_length + 1):
                 X_seq = vessel_features[i : i + self.config.sequence_length]
-                y_seq = vessel_targets_values[
-                    i + self.config.sequence_length - 1
-                ]  # Current anomaly label
+                y_seq = X_seq.copy()  # Target is same as input for reconstruction
 
                 sequences_X.append(X_seq)
                 sequences_y.append(y_seq)
@@ -302,58 +333,17 @@ class AnomalyDetectionBuilder(BaseDatasetBuilder):
         """Add contextual features."""
         # Time-based context
         if "time" in df.columns:
-            df["contextual_is_night"] = (df["time"].dt.hour < 6) | (
-                df["time"].dt.hour > 18
+            # Define time thresholds
+            NIGHT_START_HOUR = 18
+            NIGHT_END_HOUR = 6
+            WEEKEND_START_DAY = 5  # Saturday (0=Monday)
+
+            df["contextual_is_night"] = (df["time"].dt.hour < NIGHT_END_HOUR) | (
+                df["time"].dt.hour > NIGHT_START_HOUR
             )
-            df["contextual_is_weekend"] = df["time"].dt.dayofweek >= 5
+            df["contextual_is_weekend"] = df["time"].dt.dayofweek >= WEEKEND_START_DAY
 
         return df
-
-    def _detect_speed_anomalies(self, df: pd.DataFrame) -> pd.Series:
-        """Detect speed-based anomalies."""
-        if "sog" not in df.columns:
-            return pd.Series(False, index=df.index)
-
-        # Anomaly: speed > 30 knots or speed < 0
-        return (df["sog"] > 30) | (df["sog"] < 0)
-
-    def _detect_course_anomalies(self, df: pd.DataFrame) -> pd.Series:
-        """Detect course-based anomalies."""
-        if "cog" not in df.columns:
-            return pd.Series(False, index=df.index)
-
-        # Anomaly: rapid course changes > 90 degrees
-        course_change = df.groupby("mmsi")["cog"].diff().abs()
-        return course_change > 90
-
-    def _detect_position_anomalies(self, df: pd.DataFrame) -> pd.Series:
-        """Detect position-based anomalies."""
-        if not all(col in df.columns for col in ["lat", "lon"]):
-            return pd.Series(False, index=df.index)
-
-        # Anomaly: position jumps > 10 km in one time step
-        anomalies = pd.Series(False, index=df.index)
-
-        for _, vessel_df in df.groupby("mmsi"):
-            if len(vessel_df) > 1:
-                # Calculate distance between consecutive points
-                lats = vessel_df["lat"].values
-                lons = vessel_df["lon"].values
-                distances = []
-                for i in range(1, len(lats)):
-                    dist = MaritimeUtils.calculate_distance(
-                        lats[i - 1], lons[i - 1], lats[i], lons[i]
-                    )
-                    distances.append(dist)
-                # Assuming 1-minute intervals, 10 km jump is anomalous
-                distances = np.array(distances)
-                vessel_anomalies = np.zeros(len(vessel_df), dtype=bool)
-                vessel_anomalies[1:] = (
-                    distances > 10.0
-                )  # First point can't be anomalous
-                anomalies.loc[vessel_df.index] = vessel_anomalies
-
-        return anomalies
 
 
 class GraphNetworkBuilder(BaseDatasetBuilder):
@@ -389,9 +379,10 @@ class GraphNetworkBuilder(BaseDatasetBuilder):
 
         # Group by time windows
         time_windows = pd.Grouper(key="time", freq="10min")
+        MIN_NODES_FOR_GRAPH = 2  # Minimum nodes to form a graph
 
-        for time_group, window_df in features_df.groupby(time_windows):
-            if len(window_df) < 2:  # Need at least 2 nodes for a graph
+        for _time_group, window_df in features_df.groupby(time_windows):
+            if len(window_df) < MIN_NODES_FOR_GRAPH:
                 continue
 
             # Create node feature matrix
@@ -470,25 +461,45 @@ class GraphNetworkBuilder(BaseDatasetBuilder):
         return df[available_cols].values
 
     def _create_adjacency_matrix(self, df: pd.DataFrame) -> np.ndarray:
-        """Create adjacency matrix based on proximity."""
+        """Create adjacency matrix based on proximity (VECTORIZED for performance)."""
         n_nodes = len(df)
         adjacency = np.zeros((n_nodes, n_nodes))
 
         if all(col in df.columns for col in ["lat", "lon"]):
-            positions = df[["lat", "lon"]].values
+            # Extract positions
+            lats = df["lat"].values
+            lons = df["lon"].values
 
-            # Create edges based on distance threshold (e.g., 5 km)
-            for i in range(n_nodes):
-                for j in range(i + 1, n_nodes):
-                    distance = MaritimeUtils.calculate_distance(
-                        positions[i, 0],
-                        positions[i, 1],
-                        positions[j, 0],
-                        positions[j, 1],
-                    )
-                    if distance < 5.0:  # 5 km threshold
-                        adjacency[i, j] = 1
-                        adjacency[j, i] = 1
+            # Vectorized pairwise Haversine distance calculation using broadcasting
+            # Convert to radians
+            lats_rad = np.radians(lats)
+            lons_rad = np.radians(lons)
+
+            # Broadcasting: reshape to (N, 1) and (1, N) for pairwise computation
+            lat1 = lats_rad[:, np.newaxis]  # Shape: (N, 1)
+            lat2 = lats_rad[np.newaxis, :]  # Shape: (1, N)
+            lon1 = lons_rad[:, np.newaxis]  # Shape: (N, 1)
+            lon2 = lons_rad[np.newaxis, :]  # Shape: (1, N)
+
+            # Haversine formula (all pairwise distances at once!)
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = (
+                np.sin(dlat / 2) ** 2
+                + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+            )
+            c = 2 * np.arcsin(np.sqrt(a))
+
+            # Distance matrix in km
+            R = 6371.0  # Earth radius in km
+            distance_matrix = R * c  # Shape: (N, N)
+
+            # Create adjacency based on distance threshold
+            PROXIMITY_THRESHOLD_KM = 5.0  # Vessels within 5km are connected
+            adjacency = (distance_matrix < PROXIMITY_THRESHOLD_KM).astype(int)
+
+            # Remove self-loops (diagonal should be 0)
+            np.fill_diagonal(adjacency, 0)
 
         return adjacency
 
@@ -558,8 +569,8 @@ class CollisionAvoidanceBuilder(BaseDatasetBuilder):
         # Build targets
         targets_df = self.build_targets(features_df)
 
-        for mmsi, vessel_df in features_df.groupby("mmsi"):
-            vessel_df = vessel_df.sort_values("time").reset_index(drop=True)
+        for mmsi, vessel_data in features_df.groupby("mmsi"):
+            vessel_df = vessel_data.sort_values("time").reset_index(drop=True)
             vessel_targets = (
                 targets_df[targets_df["mmsi"] == mmsi]
                 .sort_values("time")
